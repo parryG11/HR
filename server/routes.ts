@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { ZodError } from 'zod';
 import { storage } from "./storage";
 import { insertDepartmentSchema, insertEmployeeSchema, insertLeaveRequestSchema } from "@shared/schema";
 
@@ -33,7 +34,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const department = await storage.createDepartment(validatedData);
       res.status(201).json(department);
     } catch (error) {
-      res.status(400).json({ message: "Invalid department data" });
+      if (error instanceof ZodError) {
+        res.status(400).json({ message: "Invalid department data", errors: error.flatten().fieldErrors });
+      } else {
+        console.error("Non-Zod error in POST /api/departments:", error);
+        res.status(400).json({ message: "Invalid department data" });
+      }
     }
   });
 
@@ -47,7 +53,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(department);
     } catch (error) {
-      res.status(400).json({ message: "Invalid department data" });
+      if (error instanceof ZodError) {
+        res.status(400).json({ message: "Invalid department data", errors: error.flatten().fieldErrors });
+      } else {
+        console.error("Non-Zod error in PUT /api/departments/:id:", error);
+        res.status(400).json({ message: "Invalid department data" });
+      }
     }
   });
 
@@ -103,7 +114,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const employee = await storage.createEmployee(validatedData);
       res.status(201).json(employee);
     } catch (error) {
-      res.status(400).json({ message: "Invalid employee data" });
+      if (error instanceof ZodError) {
+        res.status(400).json({ message: "Invalid employee data", errors: error.flatten().fieldErrors });
+      } else {
+        console.error("Non-Zod error in POST /api/employees:", error);
+        res.status(400).json({ message: "Invalid employee data" });
+      }
     }
   });
 
@@ -117,7 +133,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(employee);
     } catch (error) {
-      res.status(400).json({ message: "Invalid employee data" });
+      if (error instanceof ZodError) {
+        res.status(400).json({ message: "Invalid employee data", errors: error.flatten().fieldErrors });
+      } else {
+        console.error("Non-Zod error in PUT /api/employees/:id:", error);
+        res.status(400).json({ message: "Invalid employee data" });
+      }
     }
   });
 
@@ -175,7 +196,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const leaveRequest = await storage.createLeaveRequest(validatedData);
       res.status(201).json(leaveRequest);
     } catch (error) {
-      res.status(400).json({ message: "Invalid leave request data" });
+      if (error instanceof ZodError) {
+        res.status(400).json({ message: "Invalid leave request data", errors: error.flatten().fieldErrors });
+      } else {
+        console.error("Non-Zod error in POST /api/leave-requests:", error);
+        res.status(400).json({ message: "Invalid leave request data" });
+      }
     }
   });
 
@@ -189,7 +215,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(leaveRequest);
     } catch (error) {
-      res.status(400).json({ message: "Invalid leave request data" });
+      if (error instanceof ZodError) {
+        res.status(400).json({ message: "Invalid leave request data", errors: error.flatten().fieldErrors });
+      } else {
+        console.error("Non-Zod error in PUT /api/leave-requests/:id:", error);
+        res.status(400).json({ message: "Invalid leave request data" });
+      }
     }
   });
 
