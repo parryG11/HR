@@ -1,5 +1,15 @@
-import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Users, Building, Calendar, BarChart3 } from "lucide-react";
+import { Link, useLocation, useNavigate } from "wouter";
+import { LayoutDashboard, Users, Building, Calendar, BarChart3, LogOut, CalendarDays } from "lucide-react"; // Added LogOut & CalendarDays
+import { jwtDecode } from 'jwt-decode'; // Added
+import { useEffect, useState } from 'react'; // Added
+import { Button } from '@/components/ui/button'; // Added
+
+interface DecodedToken {
+  username: string;
+  userId: string;
+  iat: number;
+  exp: number;
+}
 
 const navigationItems = [
   {
@@ -27,16 +37,44 @@ const navigationItems = [
     href: "/reports",
     icon: BarChart3,
   },
+  {
+    title: "Calendar",
+    href: "/calendar",
+    icon: CalendarDays,
+  },
 ];
 
 export default function Sidebar() {
   const [location] = useLocation();
+  const navigate = useNavigate(); // Added
+  const [username, setUsername] = useState<string | null>(null); // Added
+
+  useEffect(() => { // Added
+    const token = localStorage.getItem('token');
+    if (token) {
+      try {
+        const decodedToken = jwtDecode<DecodedToken>(token);
+        setUsername(decodedToken.username);
+      } catch (error) {
+        console.error("Failed to decode JWT:", error);
+        // Handle invalid token, e.g., by logging out
+        localStorage.removeItem('token');
+        navigate('/login');
+      }
+    }
+  }, [location, navigate]);
 
   const isActive = (href: string) => {
     if (href === "/") {
       return location === "/";
     }
     return location.startsWith(href);
+  };
+
+  const handleLogout = () => { // Added
+    localStorage.removeItem('token');
+    setUsername(null);
+    navigate('/login');
   };
 
   return (
@@ -77,17 +115,25 @@ export default function Sidebar() {
         </ul>
       </nav>
 
-      {/* User Profile Section */}
-      <div className="p-4 border-t border-border">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-            <span className="text-sm font-medium text-primary">SJ</span>
+      {/* User Profile Section & Logout Button */}
+      <div className="p-4 border-t border-border mt-auto">
+        {username && (
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+              <span className="text-sm font-medium text-primary">
+                {username.substring(0, 2).toUpperCase()}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{username}</p>
+              {/* <p className="text-xs text-muted-foreground truncate">User Role</p>  Optional: if role is in JWT */}
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">Sarah Johnson</p>
-            <p className="text-xs text-muted-foreground truncate">HR Manager</p>
-          </div>
-        </div>
+        )}
+        <Button variant="outline" className="w-full" onClick={handleLogout}>
+          <LogOut className="mr-2 h-4 w-4" />
+          Logout
+        </Button>
       </div>
     </aside>
   );

@@ -1,6 +1,10 @@
-import { departments, employees, leaveRequests, type Department, type Employee, type LeaveRequest, type InsertDepartment, type InsertEmployee, type InsertLeaveRequest } from "@shared/schema";
+import { appointments, departments, employees, leaveRequests, users, type Appointment, type InsertAppointment, type User, type InsertUser, type Department, type Employee, type LeaveRequest, type InsertDepartment, type InsertEmployee, type InsertLeaveRequest } from "@shared/schema";
 import { db } from "./db";
-import { eq, ilike, or, count, sql } from "drizzle-orm";
+import { eq, ilike, or, count, sql, and } from "drizzle-orm"; // Added 'and'
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'; // Use environment variable in production
 
 export interface IStorage {
   // Departments
@@ -31,9 +35,81 @@ export interface IStorage {
   getEmployeeCount(): Promise<number>;
   getDepartmentCount(): Promise<number>;
   getPendingLeaveRequestsCount(): Promise<number>;
+
+  // Users
+  createUser(user: InsertUser): Promise<User>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  verifyPassword(username: string, passwordAttempt: string): Promise<User | null>;
+
+  // Appointments
+  createAppointment(appointment: InsertAppointment): Promise<Appointment>;
+  getAppointmentsByUserId(userId: number): Promise<Appointment[]>;
+  getAppointmentById(appointmentId: number): Promise<Appointment | undefined>;
+  updateAppointment(appointmentId: number, userId: number, appointmentData: Partial<Omit<InsertAppointment, 'userId'>>): Promise<Appointment | undefined>;
+  deleteAppointment(appointmentId: number, userId: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
+  // Users
+  async createUser(user: InsertUser): Promise<User> {
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(user.passwordHash, saltRounds);
+    const [newUser] = await db
+      .insert(users)
+      .values({ ...user, passwordHash })
+      .returning();
+    return newUser;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async verifyPassword(username: string, passwordAttempt: string): Promise<User | null> {
+    const userRecord = await this.getUserByUsername(username); // Renamed to avoid conflict
+    if (!userRecord) {
+      return null;
+    }
+    const isMatch = await bcrypt.compare(passwordAttempt, userRecord.passwordHash);
+    return isMatch ? userRecord : null;
+  }
+
+  // Appointments
+  async createAppointment(appointment: InsertAppointment): Promise<Appointment> {
+    const [newAppointment] = await db
+      .insert(appointments)
+      .values(appointment)
+      .returning();
+    return newAppointment;
+  }
+
+  async getAppointmentsByUserId(userId: number): Promise<Appointment[]> {
+    return db.select().from(appointments).where(eq(appointments.userId, userId));
+  }
+
+  async getAppointmentById(appointmentId: number): Promise<Appointment | undefined> {
+    const [appointment] = await db.select().from(appointments).where(eq(appointments.id, appointmentId));
+    return appointment || undefined;
+  }
+
+  async updateAppointment(appointmentId: number, userId: number, appointmentData: Partial<Omit<InsertAppointment, 'userId'>>): Promise<Appointment | undefined> {
+    const [updatedAppointment] = await db
+      .update(appointments)
+      .set(appointmentData)
+      .where(and(eq(appointments.id, appointmentId), eq(appointments.userId, userId)))
+      .returning();
+    return updatedAppointment || undefined;
+  }
+
+  async deleteAppointment(appointmentId: number, userId: number): Promise<boolean> {
+    const result = await db
+      .delete(appointments)
+      .where(and(eq(appointments.id, appointmentId), eq(appointments.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Departments
   async getDepartments(): Promise<Department[]> {
     const result = await db.select().from(departments);
     return result;

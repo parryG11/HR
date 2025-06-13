@@ -57,3 +57,24 @@ export type Employee = typeof employees.$inferSelect;
 
 export type InsertLeaveRequest = z.infer<typeof insertLeaveRequestSchema>;
 export type LeaveRequest = typeof leaveRequests.$inferSelect;
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+});
+
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof createInsertSchema(users)>;
+
+export const appointments = pgTable("appointments", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  title: text("title").notNull(),
+  date: timestamp("date").notNull(), // Using timestamp to include time
+  description: text("description"), // Optional description
+});
+
+export const insertAppointmentSchema = createInsertSchema(appointments).omit({ id: true });
+export type Appointment = typeof appointments.$inferSelect;
+export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
