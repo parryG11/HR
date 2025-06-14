@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate } from "wouter";
+import { Link, useLocation } from "wouter";
 import { LayoutDashboard, Users, Building, Calendar, BarChart3, LogOut, CalendarDays } from "lucide-react"; // Added LogOut & CalendarDays
 import { jwtDecode } from 'jwt-decode'; // Added
 import { useEffect, useState } from 'react'; // Added
@@ -45,8 +45,7 @@ const navigationItems = [
 ];
 
 export default function Sidebar() {
-  const [location] = useLocation();
-  const navigate = useNavigate(); // Added
+  const [location, navigate] = useLocation(); // Corrected to use useLocation
   const [username, setUsername] = useState<string | null>(null); // Added
 
   useEffect(() => { // Added
