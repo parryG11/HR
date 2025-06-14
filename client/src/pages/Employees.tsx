@@ -11,12 +11,17 @@ import { Plus, Search, Eye, Edit, Trash2, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import AddEmployeeModal from "@/components/AddEmployeeModal";
+import ViewEmployeeModal from "@/components/ViewEmployeeModal"; // Added
 import type { Employee, Department } from "@/lib/types";
 
 export default function Employees() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState<string>("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false); // Added for edit
+  const [selectedEmployeeForEdit, setSelectedEmployeeForEdit] = useState<Employee | null>(null); // Added for edit
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false); // Added
+  const [selectedEmployeeForView, setSelectedEmployeeForView] = useState<Employee | null>(null); // Added
   const { toast } = useToast();
 
   const { data: employees = [], isLoading: loadingEmployees } = useQuery<Employee[]>({
@@ -50,6 +55,16 @@ export default function Employees() {
 
   const handleDeleteEmployee = (id: number) => {
     deleteEmployeeMutation.mutate(id);
+  };
+
+  const handleViewEmployee = (employee: Employee) => { // Added
+    setSelectedEmployeeForView(employee);
+    setIsViewModalOpen(true);
+  };
+
+  const handleEditEmployee = (employee: Employee) => { // Added for edit
+    setSelectedEmployeeForEdit(employee);
+    setIsEditModalOpen(true);
   };
 
   const getStatusBadge = (status: string) => {
@@ -184,10 +199,10 @@ export default function Employees() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
-                          <Button variant="ghost" size="sm">
+                          <Button variant="ghost" size="sm" onClick={() => handleViewEmployee(employee)}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="sm">
+                          <Button variant="ghost" size="sm" onClick={() => handleEditEmployee(employee)}>
                             <Edit className="h-4 w-4" />
                           </Button>
                           <AlertDialog>
@@ -230,6 +245,25 @@ export default function Employees() {
         isOpen={isAddModalOpen} 
         onClose={() => setIsAddModalOpen(false)} 
       />
+      <ViewEmployeeModal // Added
+        isOpen={isViewModalOpen}
+        onClose={() => {
+          setIsViewModalOpen(false);
+          setSelectedEmployeeForView(null);
+        }}
+        employee={selectedEmployeeForView}
+      />
+      {/* Modal for Editing Employee */}
+      {isEditModalOpen && (
+        <AddEmployeeModal
+          isOpen={isEditModalOpen}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setSelectedEmployeeForEdit(null);
+          }}
+          employeeToEdit={selectedEmployeeForEdit}
+        />
+      )}
     </div>
   );
 }
