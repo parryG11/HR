@@ -65,7 +65,8 @@ export const users = pgTable("users", {
 });
 
 export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof createInsertSchema(users)>;
+export const insertUserSchema = createInsertSchema(users);
+export type InsertUser = z.infer<typeof insertUserSchema>;
 
 export const appointments = pgTable("appointments", {
   id: serial("id").primaryKey(),
