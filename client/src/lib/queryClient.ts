@@ -54,8 +54,8 @@ export const getQueryFn: <T>(options: {
       const params = new URLSearchParams();
       const queryParams = queryKey[1] as Record<string, any>;
       for (const key in queryParams) {
-        // Only append parameter if its value is not undefined
-        if (queryParams[key] !== undefined) {
+        // Only append parameter if its value is not undefined and not null
+        if (queryParams[key] !== undefined && queryParams[key] !== null) {
           params.append(key, queryParams[key].toString());
         }
       }
