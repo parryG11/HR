@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react"; // Added useEffect
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Department } from "@/lib/types";
+import type { Department, Employee } from "@/lib/types"; // Added Employee type
 
 interface AddEmployeeModalProps {
   isOpen: boolean;
   onClose: () => void;
+  employeeToEdit?: Employee | null; // Added for editing
 }
 
 interface EmployeeFormData {
@@ -26,7 +27,7 @@ interface EmployeeFormData {
   status: string;
 }
 
-export default function AddEmployeeModal({ isOpen, onClose }: AddEmployeeModalProps) {
+export default function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: AddEmployeeModalProps) { // Added employeeToEdit
   const { toast } = useToast();
   const [formData, setFormData] = useState<EmployeeFormData>({
     firstName: "",
@@ -44,9 +45,39 @@ export default function AddEmployeeModal({ isOpen, onClose }: AddEmployeeModalPr
     queryKey: ["/api/departments"],
   });
 
-  const createEmployeeMutation = useMutation({
-    mutationFn: async (employeeData: any) => {
-      const response = await apiRequest("POST", "/api/employees", employeeData);
+  useEffect(() => {
+    if (isOpen) {
+      if (employeeToEdit) {
+        setFormData({
+          firstName: employeeToEdit.firstName || "",
+          lastName: employeeToEdit.lastName || "",
+          email: employeeToEdit.email || "",
+          position: employeeToEdit.position || "",
+          departmentId: employeeToEdit.departmentId?.toString() || "",
+          departmentName: employeeToEdit.departmentName || "",
+          startDate: employeeToEdit.startDate ? employeeToEdit.startDate.split('T')[0] : "",
+          phone: employeeToEdit.phone || "",
+          status: employeeToEdit.status || "active",
+        });
+      } else {
+        resetForm();
+      }
+    }
+  }, [isOpen, employeeToEdit]);
+
+  const saveEmployeeMutation = useMutation({ // Renamed createEmployeeMutation
+    mutationFn: async (employeeData: EmployeeFormData) => { // Use EmployeeFormData
+      const apiMethod = employeeToEdit ? "PUT" : "POST";
+      const apiUrl = employeeToEdit
+        ? `/api/employees/${employeeToEdit.id}`
+        : "/api/employees";
+
+      const payload = {
+        ...employeeData,
+        departmentId: employeeData.departmentId ? parseInt(employeeData.departmentId) : null,
+      };
+
+      const response = await apiRequest(apiMethod, apiUrl, payload);
       return response.json();
     },
     onSuccess: () => {
@@ -54,15 +85,15 @@ export default function AddEmployeeModal({ isOpen, onClose }: AddEmployeeModalPr
       queryClient.invalidateQueries({ queryKey: ["/api/analytics/metrics"] });
       toast({
         title: "Success",
-        description: "Employee added successfully",
+        description: employeeToEdit ? "Employee updated successfully" : "Employee added successfully",
       });
       onClose();
-      resetForm();
+      // resetForm(); // Removed, useEffect and onClose prop should handle this
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to add employee",
+        description: employeeToEdit ? "Failed to update employee" : "Failed to add employee",
         variant: "destructive",
       });
     },
@@ -90,7 +121,7 @@ export default function AddEmployeeModal({ isOpen, onClose }: AddEmployeeModalPr
     const department = departments.find(d => d.id.toString() === departmentId);
     setFormData(prev => ({
       ...prev,
-      departmentId: departmentId ? parseInt(departmentId) : null,
+      departmentId: departmentId, // Keep as string here, parsed in handleSubmit
       departmentName: department?.name || "",
     }));
   };
@@ -109,19 +140,21 @@ export default function AddEmployeeModal({ isOpen, onClose }: AddEmployeeModalPr
 
     const employeeData = {
       ...formData,
-      departmentId: formData.departmentId ? parseInt(formData.departmentId) : null,
+      // departmentId is already string or null, will be parsed in mutationFn
     };
 
-    createEmployeeMutation.mutate(employeeData);
+    saveEmployeeMutation.mutate(employeeData); // Renamed createEmployeeMutation
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add New Employee</DialogTitle>
+          <DialogTitle>{employeeToEdit ? "Edit Employee" : "Add New Employee"}</DialogTitle>
           <DialogDescription>
-            Enter the employee's information below. Fields marked with * are required.
+            {employeeToEdit
+              ? "Make changes to the employee's information below."
+              : "Enter the new employee's information below. Fields marked with * are required."}
           </DialogDescription>
         </DialogHeader>
         
@@ -216,8 +249,10 @@ export default function AddEmployeeModal({ isOpen, onClose }: AddEmployeeModalPr
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={createEmployeeMutation.isPending}>
-              {createEmployeeMutation.isPending ? "Adding..." : "Add Employee"}
+            <Button type="submit" disabled={saveEmployeeMutation.isPending}>
+              {saveEmployeeMutation.isPending
+                ? (employeeToEdit ? "Saving..." : "Adding...")
+                : (employeeToEdit ? "Save Changes" : "Add Employee")}
             </Button>
           </DialogFooter>
         </form>
