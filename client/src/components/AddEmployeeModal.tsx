@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, ApiError } from "@/lib/queryClient"; // Imported ApiError
 import type { Department, Employee } from "@/lib/types"; // Added Employee type
 
 interface AddEmployeeModalProps {
@@ -90,12 +90,20 @@ export default function AddEmployeeModal({ isOpen, onClose, employeeToEdit }: Ad
       onClose();
       // resetForm(); // Removed, useEffect and onClose prop should handle this
     },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: employeeToEdit ? "Failed to update employee" : "Failed to add employee",
-        variant: "destructive",
-      });
+    onError: (error) => { // Added error parameter
+      if (error instanceof ApiError && error.status === 401) {
+        toast({
+          title: "Authorization Error",
+          description: "Your session may have expired or your authorization is invalid. Please log out and log in again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: employeeToEdit ? "Failed to update employee." : "Failed to add employee.",
+          variant: "destructive",
+        });
+      }
     },
   });
 

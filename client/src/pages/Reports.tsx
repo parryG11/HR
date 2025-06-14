@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Metrics } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,30 +24,10 @@ export default function Reports() {
   const [endDate, setEndDate] = useState("");
   const { toast } = useToast();
 
-  // Mock recent reports data
-  const recentReports: ReportData[] = [
-    {
-      id: "1",
-      name: "Employee Directory - Q4 2024",
-      type: "PDF",
-      generatedDate: "2024-12-10",
-      size: "2.4 MB"
-    },
-    {
-      id: "2",
-      name: "Leave Summary - November 2024",
-      type: "Excel",
-      generatedDate: "2024-12-01",
-      size: "1.8 MB"
-    },
-    {
-      id: "3",
-      name: "Department Analysis - Q3 2024",
-      type: "PDF",
-      generatedDate: "2024-11-15",
-      size: "3.1 MB"
-    }
-  ];
+  const { data: metricsData, isLoading: metricsIsLoading, error: metricsError } = useQuery<Metrics>({
+    queryKey: ['/api/analytics/metrics'],
+    // queryFn is handled by the defaultQueryFn in queryClient.ts
+  });
 
   const handleGenerateReport = () => {
     if (!reportType) {
@@ -144,84 +126,68 @@ export default function Reports() {
             </Button>
           </CardContent>
         </Card>
-
-        {/* Recent Reports */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Reports</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentReports.length === 0 ? (
-              <div className="text-center py-8">
-                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">No reports generated yet</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {recentReports.map((report) => (
-                  <div key={report.id} className="flex items-center justify-between p-4 bg-muted rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-background rounded-lg flex items-center justify-center">
-                        {getReportIcon(report.type)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{report.name}</p>
-                        <div className="flex items-center space-x-2 mt-1">
-                          <p className="text-xs text-muted-foreground">
-                            Generated on {formatDate(report.generatedDate)}
-                          </p>
-                          <Badge variant="outline" className="text-xs">
-                            {report.size}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDownloadReport(report.name)}
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* The "Recent Reports" card is removed as requested */}
       </div>
 
-      {/* Analytics Charts Placeholder */}
+      {/* Live HR Analytics */}
       <Card>
         <CardHeader>
           <CardTitle>HR Analytics</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Employee Growth Chart Placeholder */}
-            <div className="p-4 bg-muted rounded-lg">
-              <h4 className="text-sm font-medium text-foreground mb-4">Employee Growth (Last 6 Months)</h4>
-              <div className="h-40 bg-background rounded border-2 border-dashed border-border flex items-center justify-center">
-                <div className="text-center">
-                  <TrendingUp className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">Employee Growth Chart</p>
-                  <p className="text-xs text-muted-foreground mt-1">Chart visualization would be implemented here</p>
-                </div>
-              </div>
+          {metricsIsLoading && (
+            <div className="flex items-center justify-center h-40">
+              <p className="text-muted-foreground">Loading analytics data...</p>
             </div>
-
-            {/* Department Distribution Placeholder */}
-            <div className="p-4 bg-muted rounded-lg">
-              <h4 className="text-sm font-medium text-foreground mb-4">Department Distribution</h4>
-              <div className="h-40 bg-background rounded border-2 border-dashed border-border flex items-center justify-center">
-                <div className="text-center">
-                  <PieChart className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">Department Distribution Chart</p>
-                  <p className="text-xs text-muted-foreground mt-1">Pie chart would be implemented here</p>
-                </div>
-              </div>
+          )}
+          {metricsError && (
+            <div className="flex items-center justify-center h-40">
+              <p className="text-destructive">
+                Error fetching analytics data: {metricsError.message}
+              </p>
             </div>
-          </div>
+          )}
+          {metricsData && !metricsIsLoading && !metricsError && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">Total Employees</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{metricsData.totalEmployees}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">Active Departments</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{metricsData.activeDepartments}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">Pending Requests</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{metricsData.pendingRequests}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">Avg. Attendance</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{metricsData.avgAttendance}</div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+          {!metricsIsLoading && !metricsError && !metricsData && (
+             <div className="flex items-center justify-center h-40">
+              <p className="text-muted-foreground">Analytics data is currently unavailable.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
