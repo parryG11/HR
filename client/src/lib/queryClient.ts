@@ -47,8 +47,25 @@ export const getQueryFn: <T>(options: {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const res = await fetch(queryKey[0] as string, {
-      headers, // Use the new headers object
+    let url = queryKey[0] as string;
+    
+    // Check if there are parameters in the queryKey (second element)
+    if (queryKey.length > 1 && typeof queryKey[1] === 'object' && queryKey[1] !== null) {
+      const params = new URLSearchParams();
+      const queryParams = queryKey[1] as Record<string, any>;
+      for (const key in queryParams) {
+        // Only append parameter if its value is not undefined
+        if (queryParams[key] !== undefined) {
+          params.append(key, queryParams[key].toString());
+        }
+      }
+      if (params.toString()) { // Check if any parameters were actually added
+        url += `?${params.toString()}`;
+      }
+    }
+
+    const res = await fetch(url, { // Use the newly constructed URL
+      headers,
       // credentials: "include", // Removed
     });
 
