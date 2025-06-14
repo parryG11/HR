@@ -12,11 +12,22 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const token = localStorage.getItem('token');
+  const headers: HeadersInit = {};
+
+  if (data) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers, // Use the new headers object
     body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
+    // credentials: "include", // Removed
   });
 
   await throwIfResNotOk(res);
@@ -29,8 +40,33 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey[0] as string, {
-      credentials: "include",
+    const token = localStorage.getItem('token');
+    const headers: HeadersInit = {};
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    let url = queryKey[0] as string;
+
+    // Check if there are parameters in the queryKey (second element)
+    if (queryKey.length > 1 && typeof queryKey[1] === 'object' && queryKey[1] !== null) {
+      const params = new URLSearchParams();
+      const queryParams = queryKey[1] as Record<string, any>;
+      for (const key in queryParams) {
+        // Only append parameter if its value is not undefined and not null
+        if (queryParams[key] !== undefined && queryParams[key] !== null) {
+          params.append(key, queryParams[key].toString());
+        }
+      }
+      if (params.toString()) { // Check if any parameters were actually added
+        url += `?${params.toString()}`;
+      }
+    }
+
+    const res = await fetch(url, { // Use the newly constructed URL
+      headers,
+      // credentials: "include", // Removed
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

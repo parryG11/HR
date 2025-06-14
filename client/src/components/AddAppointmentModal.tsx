@@ -10,7 +10,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { Appointment } from '@/pages/CalendarPage';
-import { useToast } from "@/components/ui/use-toast"; // Added useToast
+import { useToast } from "@/hooks/use-toast"; // Added useToast
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Added Alert
 import { AlertTriangle } from 'lucide-react'; // Added AlertTriangle
 
