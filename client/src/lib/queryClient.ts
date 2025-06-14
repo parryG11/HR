@@ -48,7 +48,7 @@ export const getQueryFn: <T>(options: {
     }
 
     let url = queryKey[0] as string;
-
+    
     // Check if there are parameters in the queryKey (second element)
     if (queryKey.length > 1 && typeof queryKey[1] === 'object' && queryKey[1] !== null) {
       const params = new URLSearchParams();
