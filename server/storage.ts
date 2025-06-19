@@ -1,6 +1,6 @@
-import { appointments, departments, employees, leaveRequests, users, type Appointment, type InsertAppointment, type User, type InsertUser, type Department, type Employee, type LeaveRequest, type InsertDepartment, type InsertEmployee, type InsertLeaveRequest } from "@shared/schema";
+import { appointments, departments, employees, leaveRequests, users, type Appointment, type InsertAppointment, type User, type InsertUser, type Department, type Employee, type LeaveRequest, type InsertDepartment, type InsertEmployee, type InsertLeaveRequest, notifications, type InsertNotification, type Notification } from "@shared/schema";
 import { db } from "./db";
-import { eq, ilike, or, count, sql, and } from "drizzle-orm"; // Added 'and'
+import { eq, ilike, or, count, sql, and, desc } from "drizzle-orm"; // Added 'and' and 'desc'
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
@@ -47,6 +47,12 @@ export interface IStorage {
   getAppointmentById(appointmentId: number): Promise<Appointment | undefined>;
   updateAppointment(appointmentId: number, userId: number, appointmentData: Partial<Omit<InsertAppointment, 'userId'>>): Promise<Appointment | undefined>;
   deleteAppointment(appointmentId: number, userId: number): Promise<boolean>;
+
+  // Notifications
+  createNotification(userId: number, type: string, message: string, link?: string): Promise<Notification>;
+  getNotifications(userId: number, limit?: number, unreadOnly?: boolean): Promise<Notification[]>;
+  markNotificationAsRead(userId: number, notificationId: number): Promise<Notification | null>;
+  markAllNotificationsAsRead(userId: number): Promise<{ updatedCount: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -421,6 +427,55 @@ export class DatabaseStorage implements IStorage {
       .from(leaveRequests)
       .where(eq(leaveRequests.status, "pending"));
     return result.count;
+  }
+
+  // Notifications
+  async createNotification(userId: number, type: string, message: string, link?: string): Promise<Notification> {
+    const newNotificationData: Omit<InsertNotification, 'id' | 'createdAt' | 'isRead'> = {
+      userId,
+      type,
+      message,
+      link: link || null // Ensure link is explicitly null if undefined
+    };
+    const [result] = await db.insert(notifications).values(newNotificationData).returning();
+    return result;
+  }
+
+  async getNotifications(userId: number, limit?: number, unreadOnly?: boolean): Promise<Notification[]> {
+    let query = db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt));
+
+    if (unreadOnly) {
+      query = query.where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+    }
+
+    if (limit !== undefined && limit > 0) {
+      query = query.limit(limit);
+    }
+
+    return query;
+  }
+
+  async markNotificationAsRead(userId: number, notificationId: number): Promise<Notification | null> {
+    const [updatedNotification] = await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(and(eq(notifications.id, notificationId), eq(notifications.userId, userId)))
+      .returning();
+    return updatedNotification || null;
+  }
+
+  async markAllNotificationsAsRead(userId: number): Promise<{ updatedCount: number }> {
+    const result = await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(and(eq(notifications.userId, userId), eq(notifications.isRead, false)));
+
+    // result for pg driver contains rowCount
+    return { updatedCount: result.rowCount ?? 0 };
   }
 }
 
