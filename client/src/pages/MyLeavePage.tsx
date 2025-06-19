@@ -29,7 +29,7 @@ import { CalendarIcon, Loader2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/api"; // Use a common apiRequest
+import { apiRequest, queryClient } from "@/lib/queryClient"; // Use a common apiRequest
 import type { LeaveRequest, LeaveType, LeaveBalanceDisplay } from "@/lib/types";
 import { formatDate, formatToYYYYMMDD, calculateDaysBetween } from "@/lib/utils";
 import { cn } from "@/lib/utils"; // For Popover Calendar button styling
@@ -76,7 +76,7 @@ export default function MyLeavePage() {
     },
     enabled: !!selectedLeaveTypeName && leaveTypes.length > 0,
   });
-
+  
   const currentBalanceForSelectedType: LeaveBalanceDisplay | undefined = leaveBalance?.[0];
 
 
@@ -135,12 +135,12 @@ export default function MyLeavePage() {
     queryFn: () => apiRequest<LeaveRequest[]>(`/api/leave-requests?employee=${HARDCODED_EMPLOYEE_ID}`, "GET"),
     enabled: !!HARDCODED_EMPLOYEE_ID,
   });
-
+  
   const getStatusBadgeVariant = (status: string | undefined) => {
     switch (status?.toLowerCase()) {
       case "approved": return "success";
       case "rejected": return "destructive";
-      case "pending":
+      case "pending": 
       default: return "outline";
     }
   };
@@ -268,7 +268,7 @@ export default function MyLeavePage() {
                 </Popover>
               </div>
             </div>
-
+            
             {/* Duration Display (Optional) */}
             {startDate && endDate && calculateDaysBetween(startDate, endDate) > 0 && (
                  <div className="space-y-2">
