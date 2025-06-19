@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Plus, Search, Eye, Edit, Trash2, Users } from "lucide-react";
+import { Plus, Search, Eye, Edit, Trash2, Users, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import AddEmployeeModal from "@/components/AddEmployeeModal";
@@ -22,10 +22,36 @@ export default function Employees() {
   const [selectedEmployeeForEdit, setSelectedEmployeeForEdit] = useState<Employee | null>(null); // Added for edit
   const [isViewModalOpen, setIsViewModalOpen] = useState(false); // Added
   const [selectedEmployeeForView, setSelectedEmployeeForView] = useState<Employee | null>(null); // Added
+  const [sortColumn, setSortColumn] = useState<string>("");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc" | "none">("none");
   const { toast } = useToast();
 
+  const handleSort = (columnId: string) => {
+    if (sortColumn === columnId) {
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else if (sortDirection === "desc") {
+        setSortDirection("none");
+        setSortColumn("");
+      } else {
+        setSortDirection("asc");
+      }
+    } else {
+      setSortColumn(columnId);
+      setSortDirection("asc");
+    }
+  };
+
   const { data: employees = [], isLoading: loadingEmployees } = useQuery<Employee[]>({
-    queryKey: ["/api/employees", { search: searchQuery || undefined, department: selectedDepartment !== "all" ? selectedDepartment : undefined }],
+    queryKey: [
+      "/api/employees",
+      {
+        search: searchQuery || undefined,
+        department: selectedDepartment !== "all" ? selectedDepartment : undefined,
+        sortBy: sortColumn || undefined,
+        order: sortDirection !== "none" ? sortDirection : undefined,
+      },
+    ],
   });
 
   const { data: departments = [] } = useQuery<Department[]>({
@@ -163,7 +189,25 @@ export default function Employees() {
                   <TableRow>
                     <TableHead>Employee</TableHead>
                     <TableHead>Position</TableHead>
-                    <TableHead>Department</TableHead>
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        onClick={() => handleSort("department")}
+                      >
+                        Department
+                        {sortColumn === "department" ? (
+                          sortDirection === "asc" ? (
+                            <ArrowUp className="ml-2 h-4 w-4" />
+                          ) : sortDirection === "desc" ? (
+                            <ArrowDown className="ml-2 h-4 w-4" />
+                          ) : (
+                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="ml-2 h-4 w-4" />
+                        )}
+                      </Button>
+                    </TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Start Date</TableHead>
                     <TableHead>Actions</TableHead>
