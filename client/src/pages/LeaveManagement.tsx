@@ -10,9 +10,12 @@ import { Calendar, Check, X, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { LeaveRequest } from "@/lib/types";
+import ViewLeaveRequestModal from "@/components/ViewLeaveRequestModal"; // Import the modal
 
 export default function LeaveManagement() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [selectedLeaveRequestId, setSelectedLeaveRequestId] = useState<number | null>(null);
   const { toast } = useToast();
 
   const { data: leaveRequests = [], isLoading } = useQuery<LeaveRequest[]>({
@@ -142,6 +145,7 @@ export default function LeaveManagement() {
                     <TableHead>Employee</TableHead>
                     <TableHead>Leave Type</TableHead>
                     <TableHead>Duration</TableHead>
+                    <TableHead>Reason</TableHead> {/* Added Reason column */}
                     <TableHead>Status</TableHead>
                     <TableHead>Applied Date</TableHead>
                     <TableHead>Actions</TableHead>
@@ -154,7 +158,7 @@ export default function LeaveManagement() {
                         <div className="flex items-center space-x-3">
                           <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
                             <span className="text-sm font-medium text-primary">
-                              {request.employeeName.split(' ').map(n => n[0]).join('')}
+                              {request.employeeName.split(" ").map((n) => n[0]).join("")}
                             </span>
                           </div>
                           <div>
@@ -170,6 +174,9 @@ export default function LeaveManagement() {
                       <TableCell className="text-foreground">{request.leaveType}</TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatDateRange(request.startDate, request.endDate)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground max-w-[200px] truncate"> {/* Added Reason cell */}
+                        {request.reason || "N/A"}
                       </TableCell>
                       <TableCell>{getStatusBadge(request.status)}</TableCell>
                       <TableCell className="text-muted-foreground">
@@ -231,7 +238,14 @@ export default function LeaveManagement() {
                             </>
                           )}
                           
-                          <Button variant="ghost" size="sm">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedLeaveRequestId(request.id);
+                              setIsViewModalOpen(true);
+                            }}
+                          >
                             <Eye className="h-4 w-4" />
                           </Button>
                         </div>
@@ -244,6 +258,14 @@ export default function LeaveManagement() {
           )}
         </CardContent>
       </Card>
+      <ViewLeaveRequestModal
+        isOpen={isViewModalOpen}
+        onClose={() => {
+          setIsViewModalOpen(false);
+          setSelectedLeaveRequestId(null); // Clear selection on close
+        }}
+        leaveRequestId={selectedLeaveRequestId}
+      />
     </div>
   );
 }

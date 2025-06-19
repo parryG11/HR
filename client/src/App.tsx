@@ -12,6 +12,7 @@ import Departments from "@/pages/Departments";
 import LeaveManagement from "@/pages/LeaveManagement";
 import Reports from "@/pages/Reports";
 import CalendarPage from "@/pages/CalendarPage"; // Added
+import MyLeavePage from "@/pages/MyLeavePage"; // Import MyLeavePage
 import NotFound from "@/pages/not-found";
 
 // Helper function to check for JWT
@@ -40,6 +41,7 @@ function Router() {
       <ProtectedRoute path="/employees" component={EmployeesLayoutWrapper} />
       <ProtectedRoute path="/departments" component={DepartmentsLayoutWrapper} />
       <ProtectedRoute path="/leave" component={LeaveManagementLayoutWrapper} />
+      <ProtectedRoute path="/my-leave" component={MyLeavePageLayoutWrapper} /> {/* Added /my-leave route */}
       <ProtectedRoute path="/reports" component={ReportsLayoutWrapper} />
       <ProtectedRoute path="/calendar" component={CalendarPageLayoutWrapper} /> {/* Added */}
       <Route component={NotFound} />
@@ -52,6 +54,7 @@ const DashboardLayoutWrapper = () => <Layout><Dashboard /></Layout>;
 const EmployeesLayoutWrapper = () => <Layout><Employees /></Layout>;
 const DepartmentsLayoutWrapper = () => <Layout><Departments /></Layout>;
 const LeaveManagementLayoutWrapper = () => <Layout><LeaveManagement /></Layout>;
+const MyLeavePageLayoutWrapper = () => <Layout><MyLeavePage /></Layout>; // Wrapper for MyLeavePage
 const ReportsLayoutWrapper = () => <Layout><Reports /></Layout>;
 const CalendarPageLayoutWrapper = () => <Layout><CalendarPage /></Layout>; {/* Added */}
 

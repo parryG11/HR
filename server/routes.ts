@@ -32,6 +32,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Leave Types routes
+  app.get("/api/leave-types", authMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const leaveTypes = await storage.getLeaveTypes();
+      res.json(leaveTypes);
+    } catch (error) {
+      console.error("Error in GET /api/leave-types:", error);
+      if (error instanceof Error) {
+        res.status(500).json({ message: error.message });
+      } else {
+        res.status(500).json({ message: "Failed to fetch leave types" });
+      }
+    }
+  });
+
+  // Leave Balances routes
+  app.get("/api/employees/:employeeId/leave-balances", authMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const employeeId = parseInt(req.params.employeeId);
+      if (isNaN(employeeId)) {
+        return res.status(400).json({ message: "Invalid employee ID" });
+      }
+
+      const yearQuery = req.query.year as string | undefined;
+      let year: number | undefined = undefined;
+      if (yearQuery) {
+        year = parseInt(yearQuery);
+        if (isNaN(year)) {
+          return res.status(400).json({ message: "Invalid year parameter" });
+        }
+      }
+
+      const leaveBalances = await storage.getLeaveBalancesByEmployee(employeeId, year);
+      // if (leaveBalances.length === 0) {
+      //   // Depending on requirements, could return 404 if no balances found,
+      //   // or an empty array if that's acceptable.
+      //   // For now, returning empty array is fine.
+      // }
+      res.json(leaveBalances);
+    } catch (error) {
+      console.error(`Error in GET /api/employees/${req.params.employeeId}/leave-balances:`, error);
+      if (error instanceof Error) {
+        res.status(500).json({ message: error.message });
+      } else {
+        res.status(500).json({ message: "Failed to fetch leave balances" });
+      }
+    }
+  });
+
   // Notification routes
   app.get("/api/notifications", authMiddleware, async (req: AuthenticatedRequest, res) => {
     try {
@@ -306,6 +355,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/leave-requests", authMiddleware, async (req: AuthenticatedRequest, res) => {
     try {
+      // insertLeaveRequestSchema should already include 'reason' if the schema was updated.
+      // If not, ensure shared/schema.ts -> insertLeaveRequestSchema includes reason.
+      // For now, assuming it does.
       const validatedData = insertLeaveRequestSchema.parse(req.body);
       const leaveRequest = await storage.createLeaveRequest(validatedData);
 
@@ -330,10 +382,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(leaveRequest);
     } catch (error) {
       if (error instanceof ZodError) {
-        res.status(400).json({ message: "Invalid leave request data", errors: error.flatten().fieldErrors });
+        return res.status(400).json({ message: "Invalid leave request data", errors: error.flatten().fieldErrors });
+      } else if (error instanceof Error) {
+        // Catch errors thrown from storage.createLeaveRequest (e.g., balance issues)
+        console.error("Error in POST /api/leave-requests:", error.message);
+        return res.status(400).json({ message: error.message });
       } else {
-        console.error("Non-Zod error in POST /api/leave-requests:", error);
-        res.status(400).json({ message: "Invalid leave request data" });
+        console.error("Unknown error in POST /api/leave-requests:", error);
+        return res.status(500).json({ message: "Failed to create leave request due to an unexpected error." });
       }
     }
   });
@@ -395,13 +451,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // --- End Notification Logic ---
 
+      // --- Leave Balance Adjustment on Rejection ---
+      if (
+        validatedData.status === "rejected" &&
+        (originalLeaveRequest.status === "approved" || originalLeaveRequest.status === "pending") &&
+        updatedLeaveRequest // ensure update was successful
+      ) {
+        // If a request was previously 'approved' or 'pending' (meaning days were already debited),
+        // and is now 'rejected', credit the days back.
+        try {
+          const daysToCredit = calculateDaysBetween(originalLeaveRequest.startDate, originalLeaveRequest.endDate);
+          if (daysToCredit > 0) {
+            // Fetch leave_type_id based on leaveTypeName
+            const leaveTypeName = originalLeaveRequest.leaveType; // This is the name, e.g., "Annual"
+            const [leaveTypeRecord] = await db
+              .select({ id: leave_types.id })
+              .from(leave_types)
+              .where(eq(leave_types.name, leaveTypeName));
+
+            if (!leaveTypeRecord) {
+              console.error(`Could not find leave type ID for ${leaveTypeName} during balance adjustment.`);
+              // Not failing the whole request, but logging error.
+            } else {
+              const leaveTypeId = leaveTypeRecord.id;
+              const leaveYear = new Date(originalLeaveRequest.startDate).getFullYear();
+
+              // Adjust balance by a negative amount to credit days back
+              await storage.adjustLeaveBalance(
+                originalLeaveRequest.employeeId,
+                leaveTypeId,
+                leaveYear,
+                -daysToCredit // Negative value to credit days
+              );
+              console.log(`Credited ${daysToCredit} days back to employee ${originalLeaveRequest.employeeId} for leave type ${leaveTypeName} in ${leaveYear}.`);
+            }
+          }
+        } catch (balanceAdjustmentError) {
+          console.error("Failed to adjust leave balance during rejection:", balanceAdjustmentError);
+          // Do not fail the main PUT operation, but log the error.
+          // The leave request status is already updated. This is a secondary effect.
+        }
+      }
+      // --- End Leave Balance Adjustment ---
+
       res.json(updatedLeaveRequest);
     } catch (error) {
       if (error instanceof ZodError) {
-        res.status(400).json({ message: "Invalid leave request data", errors: error.flatten().fieldErrors });
+        return res.status(400).json({ message: "Invalid leave request data", errors: error.flatten().fieldErrors });
+      } else if (error instanceof Error) {
+        console.error("Error in PUT /api/leave-requests/:id:", error.message);
+        return res.status(500).json({ message: error.message });
       } else {
-        console.error("Non-Zod error in PUT /api/leave-requests/:id:", error);
-        res.status(400).json({ message: "Invalid leave request data" });
+        console.error("Unknown error in PUT /api/leave-requests/:id:", error);
+        return res.status(500).json({ message: "Failed to update leave request due to an unexpected error." });
       }
     }
   });
