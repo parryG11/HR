@@ -129,15 +129,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Employee routes
   app.get("/api/employees", authMiddleware, async (req, res) => {
     try {
-      const { search, department } = req.query;
+      const { search, department, sortBy, order } = req.query;
       let employees;
 
+      // Ensure sortBy and order are strings or undefined
+      const sortByString = sortBy as string | undefined;
+      const orderString = order as string | undefined;
+
       if (search) {
-        employees = await storage.searchEmployees(search as string);
+        employees = await storage.searchEmployees(search as string, sortByString, orderString);
       } else if (department) {
-        employees = await storage.getEmployeesByDepartment(parseInt(department as string));
+        employees = await storage.getEmployeesByDepartment(parseInt(department as string), sortByString, orderString);
       } else {
-        employees = await storage.getEmployees();
+        employees = await storage.getEmployees(sortByString, orderString);
       }
 
       res.json(employees);

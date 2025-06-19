@@ -15,13 +15,13 @@ export interface IStorage {
   deleteDepartment(id: number): Promise<boolean>;
 
   // Employees
-  getEmployees(): Promise<Employee[]>;
+  getEmployees(sortBy?: string, order?: string): Promise<Employee[]>;
   getEmployee(id: number): Promise<Employee | undefined>;
-  getEmployeesByDepartment(departmentId: number): Promise<Employee[]>;
+  getEmployeesByDepartment(departmentId: number, sortBy?: string, order?: string): Promise<Employee[]>;
   createEmployee(employee: InsertEmployee): Promise<Employee>;
   updateEmployee(id: number, employee: Partial<InsertEmployee>): Promise<Employee | undefined>;
   deleteEmployee(id: number): Promise<boolean>;
-  searchEmployees(query: string): Promise<Employee[]>;
+  searchEmployees(query: string, sortBy?: string, order?: string): Promise<Employee[]>;
 
   // Leave Requests
   getLeaveRequests(): Promise<LeaveRequest[]>;
@@ -143,13 +143,123 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Employees
-  async getEmployees(): Promise<Employee[]> {
-    const result = await db.select().from(employees);
-    return result;
+  async getEmployees(sortBy?: string, order?: string): Promise<Employee[]> {
+    let query = db
+      .select({
+        id: employees.id,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
+        email: employees.email,
+        position: employees.position,
+        departmentId: employees.departmentId,
+        departmentName: departments.name, // Use actual department name
+        startDate: employees.startDate,
+        status: employees.status,
+        role: employees.role,
+        profilePictureUrl: employees.profilePictureUrl,
+        // Ensure all Employee fields are selected
+        createdAt: employees.createdAt,
+        updatedAt: employees.updatedAt,
+
+      })
+      .from(employees)
+      .leftJoin(departments, eq(employees.departmentId, departments.id));
+
+    if (sortBy === "department" && order && (order.toLowerCase() === "asc" || order.toLowerCase() === "desc")) {
+      const orderSQL = order.toUpperCase() === "ASC" ? sql`ASC` : sql`DESC`;
+      // query = query.orderBy(sql`${departments.name} ${orderSQL} NULLS LAST`); // This is how you'd do it if query was a simple select
+      // For dynamic orderBy with potential NULLS LAST, we need to adjust how it's added.
+      // Drizzle doesn't directly support NULLS FIRST/LAST in orderBy method in a way that easily appends.
+      // We might need to use sql.raw or be more specific if this becomes an issue.
+      // For now, let's assume simple ASC/DESC on departments.name.
+      // A more robust way for NULLS LAST with dynamic order:
+      if (order.toUpperCase() === "ASC") {
+        query = query.orderBy(sql`${departments.name} ASC NULLS LAST`);
+      } else {
+        query = query.orderBy(sql`${departments.name} DESC NULLS LAST`);
+      }
+    } else {
+      // Default sort or sort by other columns can be added here
+      query = query.orderBy(employees.id); // Default sort by employee ID
+    }
+
+    const result = await query;
+    // Map to Employee type, ensuring departmentName is correctly assigned
+    return result.map(row => ({
+      ...row,
+      departmentName: row.departmentName || null, // Ensure departmentName is null if not present
+    })) as Employee[];
   }
 
   async getEmployee(id: number): Promise<Employee | undefined> {
-    const [employee] = await db.select().from(employees).where(eq(employees.id, id));
+    const [employee] = await db.select({
+        id: employees.id,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
+        email: employees.email,
+        position: employees.position,
+        departmentId: employees.departmentId,
+        departmentName: departments.name,
+        startDate: employees.startDate,
+        status: employees.status,
+        role: employees.role,
+        profilePictureUrl: employees.profilePictureUrl,
+        createdAt: employees.createdAt,
+        updatedAt: employees.updatedAt,
+      })
+      .from(employees)
+      .leftJoin(departments, eq(employees.departmentId, departments.id))
+      .where(eq(employees.id, id));
+
+    if (!employee) return undefined;
+    return {...employee, departmentName: employee.departmentName || null } as Employee;
+  }
+
+  async getEmployeesByDepartment(departmentId: number, sortBy?: string, order?: string): Promise<Employee[]> {
+    let query = db
+      .select({
+        id: employees.id,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
+        email: employees.email,
+        position: employees.position,
+        departmentId: employees.departmentId,
+        departmentName: departments.name,
+        startDate: employees.startDate,
+        status: employees.status,
+        role: employees.role,
+        profilePictureUrl: employees.profilePictureUrl,
+        createdAt: employees.createdAt,
+        updatedAt: employees.updatedAt,
+      })
+      .from(employees)
+      .leftJoin(departments, eq(employees.departmentId, departments.id))
+      .where(eq(employees.departmentId, departmentId));
+
+    if (sortBy === "department" && order && (order.toLowerCase() === "asc" || order.toLowerCase() === "desc")) {
+      // Since we are filtering by departmentId, all employees will belong to the same department or departmentId is NULL.
+      // If departmentId is not NULL, their department.name will be the same, so sorting by d.name won't change order much
+      // unless there are multiple employees with NULL departmentId but this function filters by a specific departmentId.
+      // However, for consistency and if the meaning of "department" sort for this function implies sorting by other criteria first,
+      // this could be adjusted. For now, we'll assume it means to be consistent with getEmployees.
+      const orderSQL = order.toUpperCase() === "ASC" ? sql`ASC` : sql`DESC`;
+       if (order.toUpperCase() === "ASC") {
+        query = query.orderBy(sql`${departments.name} ASC NULLS LAST`, employees.id); // Added secondary sort by id
+      } else {
+        query = query.orderBy(sql`${departments.name} DESC NULLS LAST`, employees.id); // Added secondary sort by id
+      }
+    } else {
+      query = query.orderBy(employees.id); // Default sort
+    }
+
+    const result = await query;
+    return result.map(row => ({
+      ...row,
+      departmentName: row.departmentName || null,
+    })) as Employee[];
+  }
+
+  async createEmployee(insertEmployee: InsertEmployee): Promise<Employee> {
     return employee || undefined;
   }
 
@@ -187,38 +297,73 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteEmployee(id: number): Promise<boolean> {
-    const [employee] = await db.select().from(employees).where(eq(employees.id, id));
-    if (!employee) return false;
+    // Retrieve the employee first to get departmentId for count update
+    const [employeeData] = await db.select({ departmentId: employees.departmentId }).from(employees).where(eq(employees.id, id));
 
     const result = await db.delete(employees).where(eq(employees.id, id));
 
-    // Update department employee count
-    if (employee.departmentId) {
+    // Update department employee count if employee was found and deleted, and had a departmentId
+    if (result.rowCount && result.rowCount > 0 && employeeData && employeeData.departmentId) {
       await db
         .update(departments)
         .set({ 
           employeeCount: sql`GREATEST(0, ${departments.employeeCount} - 1)`
         })
-        .where(eq(departments.id, employee.departmentId));
+        .where(eq(departments.id, employeeData.departmentId));
     }
 
     return (result.rowCount ?? 0) > 0;
   }
 
-  async searchEmployees(query: string): Promise<Employee[]> {
-    const result = await db
-      .select()
+  async searchEmployees(queryTerm: string, sortBy?: string, order?: string): Promise<Employee[]> {
+    // Note: `query` is already a parameter name in the outer scope from Express. Renamed to `queryTerm`.
+     let queryBuilder = db
+      .select({
+        id: employees.id,
+        firstName: employees.firstName,
+        lastName: employees.lastName,
+        email: employees.email,
+        position: employees.position,
+        departmentId: employees.departmentId,
+        departmentName: departments.name, // Use actual department name
+        startDate: employees.startDate,
+        status: employees.status,
+        role: employees.role,
+        profilePictureUrl: employees.profilePictureUrl,
+        createdAt: employees.createdAt,
+        updatedAt: employees.updatedAt,
+      })
       .from(employees)
+      .leftJoin(departments, eq(employees.departmentId, departments.id))
       .where(
         or(
-          ilike(employees.firstName, `%${query}%`),
-          ilike(employees.lastName, `%${query}%`),
-          ilike(employees.email, `%${query}%`),
-          ilike(employees.position, `%${query}%`),
-          ilike(employees.departmentName, `%${query}%`)
+          ilike(employees.firstName, `%${queryTerm}%`),
+          ilike(employees.lastName, `%${queryTerm}%`),
+          ilike(employees.email, `%${queryTerm}%`),
+          ilike(employees.position, `%${queryTerm}%`),
+          // Searching by department name should also use the joined departments.name
+          ilike(departments.name, `%${queryTerm}%`)
         )
       );
-    return result;
+
+    if (sortBy === "department" && order && (order.toLowerCase() === "asc" || order.toLowerCase() === "desc")) {
+      const orderSQL = order.toUpperCase() === "ASC" ? sql`ASC` : sql`DESC`;
+      if (order.toUpperCase() === "ASC") {
+        queryBuilder = queryBuilder.orderBy(sql`${departments.name} ASC NULLS LAST`);
+      } else {
+        queryBuilder = queryBuilder.orderBy(sql`${departments.name} DESC NULLS LAST`);
+      }
+    } else {
+      // Default sort for search results, e.g., by relevance or ID
+      // For simplicity, using ID. Full-text search relevance might be different.
+      queryBuilder = queryBuilder.orderBy(employees.id);
+    }
+
+    const result = await queryBuilder;
+    return result.map(row => ({
+      ...row,
+      departmentName: row.departmentName || null,
+    })) as Employee[];
   }
 
   // Leave Requests
