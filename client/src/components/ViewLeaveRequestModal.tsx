@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/api";
+import { apiRequest } from "@/lib/queryClient"; // Explicitly set correct import
 import { LeaveRequest } from "@/lib/types";
 import { formatDate, calculateDaysBetween } from "@/lib/utils"; // Assuming utils has these
 
