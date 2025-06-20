@@ -39,12 +39,16 @@ const HARDCODED_EMPLOYEE_ID = 1;
 const HARDCODED_EMPLOYEE_NAME = "John Doe"; // Example, ensure this employee exists for testing
 const HARDCODED_EMPLOYEE_POSITION = "Software Engineer"; // Example
 
+// Define variants based on ShadCN/UI's default Badge component variants
+// and custom ones like "success" and "destructive" if styled separately.
+type BadgeVariant = "default" | "secondary" | "outline" | "destructive" | "success";
+
 export default function MyLeavePage() {
   const { toast } = useToast();
 
   // Form State
-  const [leaveTypeId, setLeaveTypeId] = useState<string>(""); // Store leave_type.id as string for Select
-  const [selectedLeaveTypeName, setSelectedLeaveTypeName] = useState<string>("");
+  // Stores the NAME of the selected leave type directly from the Select component.
+  const [selectedLeaveTypeNameValue, setSelectedLeaveTypeNameValue] = useState<string>("");
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [reason, setReason] = useState<string>("");
@@ -58,23 +62,22 @@ export default function MyLeavePage() {
   // Fetch Leave Balance for selected type and current year
   const currentYear = new Date().getFullYear();
   const { data: leaveBalance, isLoading: isLoadingLeaveBalance } = useQuery<LeaveBalanceDisplay[]>({
-    queryKey: ["leaveBalance", HARDCODED_EMPLOYEE_ID, selectedLeaveTypeName, currentYear],
+    queryKey: ["leaveBalance", HARDCODED_EMPLOYEE_ID, selectedLeaveTypeNameValue, currentYear],
     queryFn: async () => {
-      if (!selectedLeaveTypeName) return []; // Don't fetch if no type selected
+      if (!selectedLeaveTypeNameValue) return []; // Don't fetch if no type selected
       // Find the selected leave type object to get its ID for the balance query
-      const selectedTypeObj = leaveTypes.find(lt => lt.name === selectedLeaveTypeName);
-      if (!selectedTypeObj) return [];
+      // This check might be redundant if selectedLeaveTypeNameValue guarantees a valid type from leaveTypes
+      const selectedTypeObj = leaveTypes.find(lt => lt.name === selectedLeaveTypeNameValue);
+      if (!selectedTypeObj) return []; // Or handle as error / no balance
 
-      // The API expects leave_type_id, but our API returns balances joined with name.
-      // For this specific query, we need to find the balance that matches the selectedLeaveTypeName.
       // The API /api/employees/:employeeId/leave-balances already joins with leave_types and returns leaveTypeName
       const balances = await apiRequest<LeaveBalanceDisplay[]>(
         `/api/employees/${HARDCODED_EMPLOYEE_ID}/leave-balances?year=${currentYear}`, "GET"
       );
       // Filter for the selected leave type by its name
-      return balances.filter(b => b.leaveTypeName === selectedLeaveTypeName);
+      return balances.filter(b => b.leaveTypeName === selectedLeaveTypeNameValue);
     },
-    enabled: !!selectedLeaveTypeName && leaveTypes.length > 0,
+    enabled: !!selectedLeaveTypeNameValue && leaveTypes.length > 0,
   });
   
   const currentBalanceForSelectedType: LeaveBalanceDisplay | undefined = leaveBalance?.[0];
@@ -84,13 +87,13 @@ export default function MyLeavePage() {
   const mutation = useMutation({
     mutationFn: (newLeaveRequest: Omit<LeaveRequest, "id" | "status" >) => // Backend assigns ID and default status
       apiRequest<LeaveRequest>("/api/leave-requests", "POST", newLeaveRequest),
-    onSuccess: () => {
+    onSuccess: (data, variables) => { // Access submitted variables if needed for invalidation
       toast({ title: "Success", description: "Leave request submitted successfully." });
       queryClient.invalidateQueries({ queryKey: ["employeeLeaveRequests", HARDCODED_EMPLOYEE_ID] });
-      queryClient.invalidateQueries({ queryKey: ["leaveBalance", HARDCODED_EMPLOYEE_ID, selectedLeaveTypeName, currentYear] });
+      // Invalidate based on the leaveType name that was actually submitted
+      queryClient.invalidateQueries({ queryKey: ["leaveBalance", HARDCODED_EMPLOYEE_ID, variables.leaveType, currentYear] });
       // Reset form
-      setLeaveTypeId("");
-      setSelectedLeaveTypeName("");
+      setSelectedLeaveTypeNameValue("");
       setStartDate(undefined);
       setEndDate(undefined);
       setReason("");
@@ -106,8 +109,8 @@ export default function MyLeavePage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!startDate || !endDate || !selectedLeaveTypeName || !leaveTypeId) {
-      toast({ title: "Validation Error", description: "Please fill all required fields.", variant: "destructive" });
+    if (!startDate || !endDate || !selectedLeaveTypeNameValue) {
+      toast({ title: "Validation Error", description: "Please fill all required fields (Leave Type, Start Date, End Date).", variant: "destructive" });
       return;
     }
     if (endDate < startDate) {
@@ -121,7 +124,7 @@ export default function MyLeavePage() {
       employeeId: HARDCODED_EMPLOYEE_ID,
       employeeName: HARDCODED_EMPLOYEE_NAME,
       employeePosition: HARDCODED_EMPLOYEE_POSITION,
-      leaveType: selectedLeaveTypeName, // Send name string as per schema
+      leaveType: selectedLeaveTypeNameValue, // Send name string as per schema
       startDate: formatToYYYYMMDD(startDate),
       endDate: formatToYYYYMMDD(endDate),
       reason: reason,
@@ -136,21 +139,17 @@ export default function MyLeavePage() {
     enabled: !!HARDCODED_EMPLOYEE_ID,
   });
   
-  const getStatusBadgeVariant = (status: string | undefined) => {
+  const getStatusBadgeVariant = (status: string | undefined): BadgeVariant => {
     switch (status?.toLowerCase()) {
       case "approved": return "success";
       case "rejected": return "destructive";
       case "pending": 
-      default: return "outline";
+      default: return "outline"; // Default to "outline" for pending or unknown statuses
     }
   };
 
-  useEffect(() => {
-    // If leaveTypeId (which stores the name) changes, update selectedLeaveTypeName
-    // This is because the Select component's value is set to leaveTypeId (name)
-    setSelectedLeaveTypeName(leaveTypeId);
-  }, [leaveTypeId]);
-
+  // Removed useEffect for selectedLeaveTypeName as it's no longer needed.
+  // selectedLeaveTypeNameValue now directly holds the name from the Select component.
 
   return (
     <div className="container mx-auto p-6 space-y-8">
@@ -167,8 +166,8 @@ export default function MyLeavePage() {
               <div className="space-y-2">
                 <Label htmlFor="leaveType">Leave Type</Label>
                 <Select
-                  value={leaveTypeId} // This stores the name of the leave type
-                  onValueChange={setLeaveTypeId} // Sets the name
+                  value={selectedLeaveTypeNameValue} // Stores the name of the leave type
+                  onValueChange={setSelectedLeaveTypeNameValue} // Sets the name
                   disabled={isLoadingLeaveTypes || mutation.isPending}
                 >
                   <SelectTrigger id="leaveType">
@@ -192,9 +191,9 @@ export default function MyLeavePage() {
               <div className="space-y-2">
                 <Label>Leave Balance (Current Year: {currentYear})</Label>
                 <div className="p-3 border rounded-md bg-muted min-h-[60px]">
-                  {isLoadingLeaveBalance && selectedLeaveTypeName && <p className="text-sm text-muted-foreground">Loading balance...</p>}
-                  {!selectedLeaveTypeName && <p className="text-sm text-muted-foreground">Select a leave type to see balance.</p>}
-                  {selectedLeaveTypeName && !isLoadingLeaveBalance && !currentBalanceForSelectedType && <p className="text-sm text-destructive">No balance record found for {selectedLeaveTypeName}.</p>}
+                  {isLoadingLeaveBalance && selectedLeaveTypeNameValue && <p className="text-sm text-muted-foreground">Loading balance...</p>}
+                  {!selectedLeaveTypeNameValue && <p className="text-sm text-muted-foreground">Select a leave type to see balance.</p>}
+                  {selectedLeaveTypeNameValue && !isLoadingLeaveBalance && !currentBalanceForSelectedType && <p className="text-sm text-destructive">No balance record found for {selectedLeaveTypeNameValue}.</p>}
                   {currentBalanceForSelectedType && (
                     <div>
                       <p className="text-sm">
@@ -293,7 +292,7 @@ export default function MyLeavePage() {
             </div>
           </CardContent>
           <CardFooter>
-            <Button type="submit" disabled={mutation.isPending || !startDate || !endDate || !selectedLeaveTypeName}>
+            <Button type="submit" disabled={mutation.isPending || !startDate || !endDate || !selectedLeaveTypeNameValue}>
               {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Submit Request
             </Button>
@@ -334,7 +333,7 @@ export default function MyLeavePage() {
                     <TableCell>{calculateDaysBetween(request.startDate, request.endDate)} day(s)</TableCell>
                     <TableCell className="max-w-[200px] truncate">{request.reason || "N/A"}</TableCell>
                     <TableCell>
-                      <Badge variant={getStatusBadgeVariant(request.status) as any}>
+                      <Badge variant={getStatusBadgeVariant(request.status)}>
                         {request.status}
                       </Badge>
                     </TableCell>
