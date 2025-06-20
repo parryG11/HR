@@ -76,7 +76,7 @@ export default function MyLeavePage() {
     },
     enabled: !!selectedLeaveTypeName && leaveTypes.length > 0,
   });
-
+  
   const currentBalanceForSelectedType: LeaveBalanceDisplay | undefined = leaveBalance?.[0];
 
 
@@ -135,12 +135,12 @@ export default function MyLeavePage() {
     queryFn: () => apiRequest<LeaveRequest[]>(`/api/leave-requests?employee=${HARDCODED_EMPLOYEE_ID}`, "GET"),
     enabled: !!HARDCODED_EMPLOYEE_ID,
   });
-
+  
   const getStatusBadgeVariant = (status: string | undefined) => {
     switch (status?.toLowerCase()) {
       case "approved": return "success";
       case "rejected": return "destructive";
-      case "pending":
+      case "pending": 
       default: return "outline";
     }
   };
@@ -268,7 +268,7 @@ export default function MyLeavePage() {
                 </Popover>
               </div>
             </div>
-
+            
             {/* Duration Display (Optional) */}
             {startDate && endDate && calculateDaysBetween(startDate, endDate) > 0 && (
                  <div className="space-y-2">
