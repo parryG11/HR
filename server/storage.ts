@@ -1,4 +1,4 @@
-import { appointments, departments, employees, leaveRequests, users, type Appointment, type InsertAppointment, type User, type InsertUser, type Department, type Employee, type LeaveRequest, type InsertLeaveRequest, notifications, type InsertNotification, type Notification, leave_types, leave_balances, LeaveType, LeaveBalance } from "@shared/schema";
+import { appointments, departments, employees, leaveRequests, users, type Appointment, type InsertAppointment, type User, type InsertUser, type Department, type Employee, type LeaveRequest, type InsertLeaveRequest, notifications, type InsertNotification, type Notification, leave_types, leave_balances, LeaveType, LeaveBalance, InsertLeaveType } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, or, count, sql, and, desc } from "drizzle-orm"; // Added 'and' and 'desc'
 import bcrypt from 'bcrypt';
@@ -56,6 +56,9 @@ export interface IStorage {
 
   // Leave Types
   getLeaveTypes(): Promise<LeaveType[]>;
+  createLeaveType(data: InsertLeaveType): Promise<LeaveType>;
+  updateLeaveType(id: number, data: Partial<InsertLeaveType>): Promise<LeaveType | undefined>;
+  deleteLeaveType(id: number): Promise<boolean>;
 
   // Leave Balances
   getLeaveBalancesByEmployee(employeeId: number, year?: number): Promise<Array<LeaveBalance & { leaveTypeName: string | null }>>;
@@ -578,6 +581,27 @@ export class DatabaseStorage implements IStorage {
       console.error("Error fetching leave types:", error);
       throw new Error("Could not fetch leave types.");
     }
+  }
+
+  async createLeaveType(data: InsertLeaveType): Promise<LeaveType> {
+    // Ensure data is validated against insertLeaveTypeSchema before this, typically in routes.ts
+    const [newLeaveType] = await db.insert(leave_types).values(data).returning();
+    if (!newLeaveType) {
+      throw new Error("Failed to create leave type."); // Or a more specific error
+    }
+    return newLeaveType;
+  }
+
+  async updateLeaveType(id: number, data: Partial<InsertLeaveType>): Promise<LeaveType | undefined> {
+    const [updatedLeaveType] = await db.update(leave_types).set(data).where(eq(leave_types.id, id)).returning();
+    return updatedLeaveType || undefined;
+  }
+
+  async deleteLeaveType(id: number): Promise<boolean> {
+    // TODO: Consider implications for existing leave requests/balances.
+    // For now, direct deletion.
+    const result = await db.delete(leave_types).where(eq(leave_types.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 
   // Leave Balances
