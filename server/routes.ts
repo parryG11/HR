@@ -2,7 +2,7 @@ import type { Express, Request } from "express"; // Added Request
 import { createServer, type Server } from "http";
 import { ZodError } from 'zod';
 import { storage } from "./storage";
-import { insertDepartmentSchema, insertEmployeeSchema, insertLeaveRequestSchema, users, insertAppointmentSchema } from "@shared/schema"; // Added insertAppointmentSchema
+import { insertDepartmentSchema, insertEmployeeSchema, insertLeaveRequestSchema, users, insertAppointmentSchema, leave_types, insertLeaveTypeSchema } from "@shared/schema"; // Added insertAppointmentSchema, leave_types, insertLeaveTypeSchema
 import jwt from 'jsonwebtoken';
 import { authMiddleware, AuthenticatedRequest } from "./authMiddleware"; // Modified import
 
@@ -32,18 +32,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Leave Types routes
-  app.get("/api/leave-types", authMiddleware, async (req: AuthenticatedRequest, res) => {
+  app.post("/api/leave-types", authMiddleware, async (req: AuthenticatedRequest, res) => {
     try {
-      const leaveTypes = await storage.getLeaveTypes();
-      res.json(leaveTypes);
+      const validatedData = insertLeaveTypeSchema.parse(req.body);
+      const leaveType = await storage.createLeaveType(validatedData);
+      res.status(201).json(leaveType);
     } catch (error) {
-      console.error("Error in GET /api/leave-types:", error);
-      if (error instanceof Error) {
-        res.status(500).json({ message: error.message });
-      } else {
-        res.status(500).json({ message: "Failed to fetch leave types" });
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: "Invalid leave type data", errors: error.flatten().fieldErrors });
       }
+      // Check for unique constraint violation for name (e.g., specific error code from DB)
+      if (error.message && error.message.includes("unique constraint")) { // Basic check, DB specific error handling is better
+           return res.status(409).json({ message: "Leave type name already exists." });
+      }
+      console.error("Error in POST /api/leave-types:", error);
+      res.status(500).json({ message: "Failed to create leave type" });
+    }
+  });
+
+  app.put("/api/leave-types/:id", authMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid leave type ID" });
+      }
+      // Use .partial() for updates, as not all fields are required
+      const validatedData = insertLeaveTypeSchema.partial().parse(req.body);
+      const leaveType = await storage.updateLeaveType(id, validatedData);
+      if (!leaveType) {
+        return res.status(404).json({ message: "Leave type not found" });
+      }
+      res.json(leaveType);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: "Invalid leave type data", errors: error.flatten().fieldErrors });
+      }
+      if (error.message && error.message.includes("unique constraint")) {
+           return res.status(409).json({ message: "Leave type name already exists." });
+      }
+      console.error(`Error in PUT /api/leave-types/${req.params.id}:`, error);
+      res.status(500).json({ message: "Failed to update leave type" });
+    }
+  });
+
+  app.delete("/api/leave-types/:id", authMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid leave type ID" });
+      }
+      // Add check: Prevent deletion if leave type is in use by leave_requests or leave_balances
+      // This is a more advanced check. For now, direct deletion.
+      // Example placeholder for check:
+      // const isInUse = await storage.isLeaveTypeInUse(id);
+      // if (isInUse) {
+      //   return res.status(400).json({ message: "Leave type is in use and cannot be deleted." });
+      // }
+
+      const deleted = await storage.deleteLeaveType(id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Leave type not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error(`Error in DELETE /api/leave-types/${req.params.id}:`, error);
+      res.status(500).json({ message: "Failed to delete leave type" });
     }
   });
 
@@ -464,10 +517,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (daysToCredit > 0) {
             // Fetch leave_type_id based on leaveTypeName
             const leaveTypeName = originalLeaveRequest.leaveType; // This is the name, e.g., "Annual"
-            const [leaveTypeRecord] = await db
+            const [leaveTypeRecord] = await storage.db // Using storage.db directly here as an example, though a dedicated storage method is cleaner
               .select({ id: leave_types.id })
               .from(leave_types)
-              .where(eq(leave_types.name, leaveTypeName));
+              .where(storage.eq(leave_types.name, leaveTypeName));
 
             if (!leaveTypeRecord) {
               console.error(`Could not find leave type ID for ${leaveTypeName} during balance adjustment.`);

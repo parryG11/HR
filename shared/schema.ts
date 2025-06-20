@@ -101,9 +101,11 @@ export const leave_types = pgTable("leave_types", {
   defaultDays: integer("default_days").default(0), // standard allocation for this leave type
 });
 
-export const insertLeaveTypeSchema = createInsertSchema(leave_types).omit({
-  id: true,
-});
+export const insertLeaveTypeSchema = createInsertSchema(leave_types, {
+  name: z.string().min(1, "Name cannot be empty"),
+  description: z.string().nullable().optional(), // Allow null or undefined
+  defaultDays: z.coerce.number().int().nonnegative("Default days must be a non-negative integer").default(0),
+}).omit({ id: true });
 
 export type LeaveType = typeof leave_types.$inferSelect;
 export type InsertLeaveType = z.infer<typeof insertLeaveTypeSchema>;
