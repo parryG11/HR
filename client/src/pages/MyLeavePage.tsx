@@ -185,6 +185,11 @@ export default function MyLeavePage() {
                     )}
                   </SelectContent>
                 </Select>
+                {!isLoadingLeaveTypes && leaveTypes.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No leave types are currently configured. Please contact an administrator if you believe this is an error.
+                  </p>
+                )}
               </div>
 
               {/* Leave Balance Display */}
