@@ -48,3 +48,21 @@ export interface Notification {
   isRead: boolean;
   createdAt: string; // Assuming ISO date string
 }
+
+export interface LeaveType {
+  id: number;
+  name: string;
+  description?: string | null;
+  defaultDays: number;
+}
+
+// For displaying leave balance, including the leave type name
+export interface LeaveBalanceDisplay {
+  id: number; // balance id
+  employeeId: number;
+  leaveTypeId: number;
+  year: number;
+  totalEntitlement: number;
+  daysUsed: number;
+  leaveTypeName?: string | null; // Joined from leave_types table
+}
