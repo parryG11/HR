@@ -641,58 +641,72 @@ export class DatabaseStorage implements IStorage {
 
   async seedInitialEmployeeAndBalances(): Promise<void> {
     console.log('Checking for employee ID 1...');
-    const existingEmployee = await this.getEmployee(1);
-    let employeeIdToUse = 1;
+    const existingEmployeeById1 = await this.getEmployee(1);
+    let employeeIdToUse: number | null = null; // Initialize to null
 
-    if (!existingEmployee) {
-      console.log('Employee ID 1 not found. Seeding employee John Doe...');
-      try {
-        // Make sure department "Tech" exists or create it. For simplicity, assume departmentId 1 if it exists, or null.
-        // Let's try to fetch a department, or allow null if none exist.
-        let defaultDepartmentId: number | null = null;
-        const depts = await this.getDepartments();
-        if (depts.length > 0) {
-          defaultDepartmentId = depts[0].id;
-        } else {
-          // Optionally create a default department if none exist
-          // For now, we'll proceed with null if no departments are set up.
-          console.log("No departments found. Employee will be created without a department initially.");
-        }
-        
-        const newEmployee = await this.createEmployee({
-          // id: 1, // ID is serial, so we don't set it. We'll fetch the first employee later.
-          firstName: "John",
-          lastName: "Doe",
-          email: "john.doe@example.com",
-          position: "Software Engineer",
-          departmentId: defaultDepartmentId, 
-          startDate: new Date().toISOString().split('T')[0], // Today's date
-          status: "active",
-        });
-        console.log('Successfully seeded employee John Doe with ID:', newEmployee.id);
-        employeeIdToUse = newEmployee.id; // Use the ID of the newly created employee
-                                          // For the MyLeavePage, it expects employeeId = 1. 
-                                          // This might need adjustment if the first employee isn't ID 1.
-                                          // Forcing ID 1 is tricky with serial PKs without direct SQL.
-                                          // We will assume the first created employee will get ID 1 if the table is empty.
-                                          // If not, the HARDCODED_EMPLOYEE_ID on the frontend must match this.
-      } catch (error) {
-        console.error('Error seeding initial employee:', error);
-        return; // Stop if employee seeding fails
-      }
+    if (existingEmployeeById1) {
+      console.log(`Employee ID 1 already exists (Name: ${existingEmployeeById1.firstName} ${existingEmployeeById1.lastName}, Email: ${existingEmployeeById1.email}).`);
+      employeeIdToUse = existingEmployeeById1.id; // Should be 1
     } else {
-      console.log('Employee ID 1 already exists.');
-      employeeIdToUse = existingEmployee.id; // Should be 1
+      console.log('Employee ID 1 not found. Checking for "john.doe@example.com"...');
+      try {
+        const johnDoeByEmail = await db.query.employees.findFirst({
+          where: eq(employees.email, "john.doe@example.com"),
+        });
+
+        if (johnDoeByEmail) {
+          // Email exists. Is it ID 1 (somehow missed by getEmployee(1) - unlikely but good to cover)? Or another ID?
+          console.warn(`Employee with email "john.doe@example.com" already exists with ID ${johnDoeByEmail.id}.`);
+          if (johnDoeByEmail.id === 1) {
+            // This case should ideally have been caught by existingEmployeeById1, but defensive check.
+            console.log("This existing employee is ID 1. Will use for balance seeding.");
+            employeeIdToUse = 1;
+          } else {
+            console.warn(`Cannot create "John Doe" as employee ID 1 because email "john.doe@example.com" is taken by employee ID ${johnDoeByEmail.id}.`);
+            console.log("MyLeavePage expects employee ID 1 to be the test user. Manual database adjustment might be needed.");
+            console.log("Skipping balance seeding for ID 1 due to this conflict.");
+            return; // Stop seeding balances for employee 1
+          }
+        } else {
+          // Employee ID 1 does not exist AND email "john.doe@example.com" is available.
+          console.log('Email "john.doe@example.com" is available. Creating new "John Doe" employee...');
+          let defaultDepartmentId: number | null = null;
+          const depts = await this.getDepartments();
+          if (depts.length > 0) defaultDepartmentId = depts[0].id;
+          else console.log("No departments found. New employee will be created without a department initially.");
+
+          const newEmployee = await this.createEmployee({
+            firstName: "John",
+            lastName: "Doe",
+            email: "john.doe@example.com",
+            position: "Software Engineer",
+            departmentId: defaultDepartmentId,
+            startDate: new Date().toISOString().split('T')[0],
+            status: "active",
+          });
+          console.log('Successfully seeded new employee "John Doe" with ID:', newEmployee.id);
+          employeeIdToUse = newEmployee.id;
+
+          if (employeeIdToUse !== 1) {
+            console.warn(`Newly created "John Doe" has ID ${employeeIdToUse}. MyLeavePage expects ID 1.`);
+            console.warn(`Balances will be seeded for employee ID ${employeeIdToUse}. For MyLeavePage testing with ID 1, manual DB adjustment or changing the frontend's HARDCODED_EMPLOYEE_ID might be necessary.`);
+          }
+        }
+      } catch (error: any) {
+        console.error('Error during attempt to find or seed "John Doe":', error.message);
+        console.log("Skipping balance seeding due to issues creating/verifying 'John Doe'.");
+        return;
+      }
+    }
+
+    // Proceed with balance seeding only if employeeIdToUse was successfully determined
+    if (employeeIdToUse === null) {
+      console.log("Employee ID for balance seeding could not be determined (was not ID 1, and could not create suitable John Doe). Skipping balance seeding.");
+      return;
     }
     
-    // Ensure the employee ID is indeed 1 for the hardcoded frontend value.
-    // If the first employee created doesn't get ID 1 due to prior data, this seeding logic
-    // won't perfectly match the MyLeavePage's HARDCODED_EMPLOYEE_ID = 1 without manual DB adjustment
-    // or changing the hardcoded ID. For now, we proceed assuming employeeIdToUse is what we need.
-    // If the MyLeavePage specifically needs employee ID 1, and this ID is taken by a different employee,
-    // then this seed logic would need to be smarter or the frontend assumption changed.
-
-    console.log(`Setting up leave balances for employee ID ${employeeIdToUse}...`);
+    // If we reached here, employeeIdToUse is set (either to 1, or the ID of a newly created John Doe).
+    console.log(`Proceeding to set up leave balances for employee ID ${employeeIdToUse}...`);
     const currentYear = new Date().getFullYear();
     const leaveTypeNamesToSeed = [
       { name: "Annual Leave", defaultDays: 20 },
