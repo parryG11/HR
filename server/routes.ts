@@ -2,7 +2,7 @@ import type { Express, Request } from "express"; // Added Request
 import { createServer, type Server } from "http";
 import { ZodError } from 'zod';
 import { storage } from "./storage";
-import { insertDepartmentSchema, insertEmployeeSchema, insertLeaveRequestSchema, users, insertAppointmentSchema, leave_types, insertLeaveTypeSchema } from "@shared/schema"; // Added insertAppointmentSchema, leave_types, insertLeaveTypeSchema
+import { insertDepartmentSchema, insertEmployeeSchema, insertLeaveRequestSchema, users, insertAppointmentSchema } from "@shared/schema"; // Added insertAppointmentSchema
 import jwt from 'jsonwebtoken';
 import { authMiddleware, AuthenticatedRequest } from "./authMiddleware"; // Modified import
 
@@ -29,108 +29,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error in POST /api/auth/register:", error);
       res.status(500).json({ message: "Failed to register user" });
-    }
-  });
-
-  app.post("/api/leave-types", authMiddleware, async (req: AuthenticatedRequest, res) => {
-    try {
-      const validatedData = insertLeaveTypeSchema.parse(req.body);
-      const leaveType = await storage.createLeaveType(validatedData);
-      res.status(201).json(leaveType);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid leave type data", errors: error.flatten().fieldErrors });
-      }
-      // Check for unique constraint violation for name (e.g., specific error code from DB)
-      if (error.message && error.message.includes("unique constraint")) { // Basic check, DB specific error handling is better
-           return res.status(409).json({ message: "Leave type name already exists." });
-      }
-      console.error("Error in POST /api/leave-types:", error);
-      res.status(500).json({ message: "Failed to create leave type" });
-    }
-  });
-
-  app.put("/api/leave-types/:id", authMiddleware, async (req: AuthenticatedRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid leave type ID" });
-      }
-      // Use .partial() for updates, as not all fields are required
-      const validatedData = insertLeaveTypeSchema.partial().parse(req.body);
-      const leaveType = await storage.updateLeaveType(id, validatedData);
-      if (!leaveType) {
-        return res.status(404).json({ message: "Leave type not found" });
-      }
-      res.json(leaveType);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid leave type data", errors: error.flatten().fieldErrors });
-      }
-      if (error.message && error.message.includes("unique constraint")) {
-           return res.status(409).json({ message: "Leave type name already exists." });
-      }
-      console.error(`Error in PUT /api/leave-types/${req.params.id}:`, error);
-      res.status(500).json({ message: "Failed to update leave type" });
-    }
-  });
-
-  app.delete("/api/leave-types/:id", authMiddleware, async (req: AuthenticatedRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid leave type ID" });
-      }
-      // Add check: Prevent deletion if leave type is in use by leave_requests or leave_balances
-      // This is a more advanced check. For now, direct deletion.
-      // Example placeholder for check:
-      // const isInUse = await storage.isLeaveTypeInUse(id);
-      // if (isInUse) {
-      //   return res.status(400).json({ message: "Leave type is in use and cannot be deleted." });
-      // }
-
-      const deleted = await storage.deleteLeaveType(id);
-      if (!deleted) {
-        return res.status(404).json({ message: "Leave type not found" });
-      }
-      res.status(204).send();
-    } catch (error) {
-      console.error(`Error in DELETE /api/leave-types/${req.params.id}:`, error);
-      res.status(500).json({ message: "Failed to delete leave type" });
-    }
-  });
-
-  // Leave Balances routes
-  app.get("/api/employees/:employeeId/leave-balances", authMiddleware, async (req: AuthenticatedRequest, res) => {
-    try {
-      const employeeId = parseInt(req.params.employeeId);
-      if (isNaN(employeeId)) {
-        return res.status(400).json({ message: "Invalid employee ID" });
-      }
-
-      const yearQuery = req.query.year as string | undefined;
-      let year: number | undefined = undefined;
-      if (yearQuery) {
-        year = parseInt(yearQuery);
-        if (isNaN(year)) {
-          return res.status(400).json({ message: "Invalid year parameter" });
-        }
-      }
-
-      const leaveBalances = await storage.getLeaveBalancesByEmployee(employeeId, year);
-      // if (leaveBalances.length === 0) {
-      //   // Depending on requirements, could return 404 if no balances found,
-      //   // or an empty array if that's acceptable.
-      //   // For now, returning empty array is fine.
-      // }
-      res.json(leaveBalances);
-    } catch (error) {
-      console.error(`Error in GET /api/employees/${req.params.employeeId}/leave-balances:`, error);
-      if (error instanceof Error) {
-        res.status(500).json({ message: error.message });
-      } else {
-        res.status(500).json({ message: "Failed to fetch leave balances" });
-      }
     }
   });
 
@@ -504,48 +402,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // --- End Notification Logic ---
 
-      // --- Leave Balance Adjustment on Rejection ---
-      if (
-        validatedData.status === "rejected" &&
-        (originalLeaveRequest.status === "approved" || originalLeaveRequest.status === "pending") &&
-        updatedLeaveRequest // ensure update was successful
-      ) {
-        // If a request was previously 'approved' or 'pending' (meaning days were already debited),
-        // and is now 'rejected', credit the days back.
-        try {
-          const daysToCredit = calculateDaysBetween(originalLeaveRequest.startDate, originalLeaveRequest.endDate);
-          if (daysToCredit > 0) {
-            // Fetch leave_type_id based on leaveTypeName
-            const leaveTypeName = originalLeaveRequest.leaveType; // This is the name, e.g., "Annual"
-            const [leaveTypeRecord] = await storage.db // Using storage.db directly here as an example, though a dedicated storage method is cleaner
-              .select({ id: leave_types.id })
-              .from(leave_types)
-              .where(storage.eq(leave_types.name, leaveTypeName));
-
-            if (!leaveTypeRecord) {
-              console.error(`Could not find leave type ID for ${leaveTypeName} during balance adjustment.`);
-              // Not failing the whole request, but logging error.
-            } else {
-              const leaveTypeId = leaveTypeRecord.id;
-              const leaveYear = new Date(originalLeaveRequest.startDate).getFullYear();
-
-              // Adjust balance by a negative amount to credit days back
-              await storage.adjustLeaveBalance(
-                originalLeaveRequest.employeeId,
-                leaveTypeId,
-                leaveYear,
-                -daysToCredit // Negative value to credit days
-              );
-              console.log(`Credited ${daysToCredit} days back to employee ${originalLeaveRequest.employeeId} for leave type ${leaveTypeName} in ${leaveYear}.`);
-            }
-          }
-        } catch (balanceAdjustmentError) {
-          console.error("Failed to adjust leave balance during rejection:", balanceAdjustmentError);
-          // Do not fail the main PUT operation, but log the error.
-          // The leave request status is already updated. This is a secondary effect.
-        }
-      }
-      // --- End Leave Balance Adjustment ---
+      // --- Leave Balance Adjustment on Rejection (REMOVED as leave_types and leave_balances are removed) ---
+      // The logic to credit back days when a leave request is rejected has been removed
+      // as it depended on the leave_types and leave_balances tables.
 
       res.json(updatedLeaveRequest);
     } catch (error) {

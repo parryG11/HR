@@ -13,7 +13,6 @@ import LeaveManagement from "@/pages/LeaveManagement";
 import Reports from "@/pages/Reports";
 import CalendarPage from "@/pages/CalendarPage"; // Added
 import MyLeavePage from "@/pages/MyLeavePage"; // Import MyLeavePage
-import ManageLeaveTypesPage from "./pages/ManageLeaveTypesPage"; // Adjust path if needed
 import NotFound from "@/pages/not-found";
 
 // Helper function to check for JWT
@@ -45,7 +44,6 @@ function Router() {
       <ProtectedRoute path="/my-leave" component={MyLeavePageLayoutWrapper} /> {/* Added /my-leave route */}
       <ProtectedRoute path="/reports" component={ReportsLayoutWrapper} />
       <ProtectedRoute path="/calendar" component={CalendarPageLayoutWrapper} /> {/* Added */}
-      <ProtectedRoute path="/manage-leave-types" component={ManageLeaveTypesPageLayoutWrapper} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -59,7 +57,6 @@ const LeaveManagementLayoutWrapper = () => <Layout><LeaveManagement /></Layout>;
 const MyLeavePageLayoutWrapper = () => <Layout><MyLeavePage /></Layout>; // Wrapper for MyLeavePage
 const ReportsLayoutWrapper = () => <Layout><Reports /></Layout>;
 const CalendarPageLayoutWrapper = () => <Layout><CalendarPage /></Layout>; {/* Added */}
-const ManageLeaveTypesPageLayoutWrapper = () => <Layout><ManageLeaveTypesPage /></Layout>;
 
 
 function App() {
