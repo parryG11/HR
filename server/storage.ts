@@ -1,6 +1,6 @@
 import {
   appointments, departments, employees, leaveRequests, users, leaveTypes, leaveBalances, // tables
-  type Appointment, type InsertAppointment, type User, type InsertUser, type Department, type Employee, type LeaveRequest, type InsertLeaveRequest, notifications, type InsertNotification, type Notification, type LeaveType, type LeaveBalance, type InsertLeaveBalance // types
+  type Appointment, type InsertAppointment, type User, type InsertUser, type Department, type Employee, type LeaveRequest, type InsertLeaveRequest, notifications, type InsertNotification, type Notification, type LeaveType, type InsertLeaveType, type LeaveBalance, type InsertLeaveBalance // types
 } from "@shared/schema";
 // Define LeaveBalanceDisplay locally to avoid client path import
 interface LeaveBalanceDisplay {
@@ -51,6 +51,7 @@ export interface IStorage {
 
   // Leave Types
   getLeaveTypes(): Promise<LeaveType[]>;
+  seedInitialLeaveTypes(): Promise<void>;
 
   // Leave Balances
   getLeaveBalancesForEmployee(employeeId: number, year: number): Promise<LeaveBalanceDisplay[]>;
@@ -552,6 +553,34 @@ export class DatabaseStorage implements IStorage {
   async getLeaveTypes(): Promise<LeaveType[]> {
     const result = await db.select().from(leaveTypes);
     return result;
+  }
+
+  async seedInitialLeaveTypes(): Promise<void> {
+    console.log('Checking for existing leave types...');
+    const existingLeaveTypes = await db.select({ count: count() }).from(leaveTypes);
+    const leaveTypeCount = existingLeaveTypes[0].count;
+
+    if (leaveTypeCount === 0) {
+      console.log('No existing leave types found. Seeding initial leave types...');
+      const defaultLeaveTypes: InsertLeaveType[] = [
+        { name: "Annual Leave", description: "Annual paid leave", defaultDays: 20 },
+        { name: "Sick Leave", description: "Leave for illness or injury", defaultDays: 10 },
+        { name: "Unpaid Leave", description: "Leave without pay", defaultDays: 0 },
+        { name: "Maternity Leave", description: "Leave for new mothers", defaultDays: 90 },
+        { name: "Paternity Leave", description: "Leave for new fathers", defaultDays: 10 },
+      ];
+      console.log('Prepared default leave types for seeding:', JSON.stringify(defaultLeaveTypes, null, 2));
+
+      try {
+        console.log('Attempting to insert default leave types into database...');
+        await db.insert(leaveTypes).values(defaultLeaveTypes);
+        console.log('Database insert operation completed. Successfully seeded initial leave types.');
+      } catch (error) {
+        console.error('Error seeding initial leave types:', error);
+      }
+    } else {
+      console.log('Leave types already exist. Skipping seeding.');
+    }
   }
 
   async getLeaveTypeByName(name: string): Promise<LeaveType | undefined> {

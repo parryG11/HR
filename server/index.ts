@@ -53,7 +53,8 @@ app.use((req, res, next) => {
   } catch (error) {
     console.error("Failed to seed initial leave types:", error);
     // Depending on the application's requirements, you might want to exit here
-    // process.exit(1);
+    // Forcing exit if seeding fails:
+    throw error; // Re-throw the error
   }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
