@@ -658,20 +658,20 @@ export class DatabaseStorage implements IStorage {
           // For now, we'll proceed with null if no departments are set up.
           console.log("No departments found. Employee will be created without a department initially.");
         }
-
+        
         const newEmployee = await this.createEmployee({
           // id: 1, // ID is serial, so we don't set it. We'll fetch the first employee later.
           firstName: "John",
           lastName: "Doe",
           email: "john.doe@example.com",
           position: "Software Engineer",
-          departmentId: defaultDepartmentId,
+          departmentId: defaultDepartmentId, 
           startDate: new Date().toISOString().split('T')[0], // Today's date
           status: "active",
         });
         console.log('Successfully seeded employee John Doe with ID:', newEmployee.id);
         employeeIdToUse = newEmployee.id; // Use the ID of the newly created employee
-                                          // For the MyLeavePage, it expects employeeId = 1.
+                                          // For the MyLeavePage, it expects employeeId = 1. 
                                           // This might need adjustment if the first employee isn't ID 1.
                                           // Forcing ID 1 is tricky with serial PKs without direct SQL.
                                           // We will assume the first created employee will get ID 1 if the table is empty.
@@ -684,7 +684,7 @@ export class DatabaseStorage implements IStorage {
       console.log('Employee ID 1 already exists.');
       employeeIdToUse = existingEmployee.id; // Should be 1
     }
-
+    
     // Ensure the employee ID is indeed 1 for the hardcoded frontend value.
     // If the first employee created doesn't get ID 1 due to prior data, this seeding logic
     // won't perfectly match the MyLeavePage's HARDCODED_EMPLOYEE_ID = 1 without manual DB adjustment
