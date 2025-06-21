@@ -704,7 +704,7 @@ export class DatabaseStorage implements IStorage {
       console.log("Employee ID for balance seeding could not be determined (was not ID 1, and could not create suitable John Doe). Skipping balance seeding.");
       return;
     }
-
+    
     // If we reached here, employeeIdToUse is set (either to 1, or the ID of a newly created John Doe).
     console.log(`Proceeding to set up leave balances for employee ID ${employeeIdToUse}...`);
     const currentYear = new Date().getFullYear();
