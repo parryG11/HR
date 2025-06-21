@@ -13,7 +13,7 @@ interface LeaveBalanceDisplay {
   leaveTypeName: string | null;
 }
 import { db } from "./db";
-import { eq, ilike, or, count, sql, and, desc } from "drizzle-orm";
+import { eq, ilike, or, count, sql, and, desc, getTableColumns } from "drizzle-orm"; // Added getTableColumns
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
@@ -52,6 +52,7 @@ export interface IStorage {
   // Leave Types
   getLeaveTypes(): Promise<LeaveType[]>;
   seedInitialLeaveTypes(): Promise<void>;
+  seedInitialEmployeeAndBalances(): Promise<void>; // New seeding function
 
   // Leave Balances
   getLeaveBalancesForEmployee(employeeId: number, year: number): Promise<LeaveBalanceDisplay[]>;
@@ -235,27 +236,40 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEmployee(id: number): Promise<Employee | undefined> {
-    const [employee] = await db.select({
-        id: employees.id,
-        firstName: employees.firstName,
-        lastName: employees.lastName,
-        email: employees.email,
-        position: employees.position,
-        departmentId: employees.departmentId,
-        departmentName: departments.name,
-        startDate: employees.startDate,
-        status: employees.status,
-        role: employees.role,
-        profilePictureUrl: employees.profilePictureUrl,
-        createdAt: employees.createdAt,
-        updatedAt: employees.updatedAt,
+    const [result] = await db
+      .select({
+        // Select all fields from the employees table
+        ...getTableColumns(employees),
+        // And explicitly select the department name from the joined departments table,
+        // aliasing it to avoid collision during selection, then map it.
+        joinedDepartmentName: departments.name
       })
       .from(employees)
       .leftJoin(departments, eq(employees.departmentId, departments.id))
       .where(eq(employees.id, id));
 
-    if (!employee) return undefined;
-    return {...employee, departmentName: employee.departmentName || null } as Employee;
+    if (!result) return undefined;
+
+    // Construct the Employee object.
+    // The Employee type (employees.$inferSelect) expects a 'departmentName' field.
+    // We use the 'joinedDepartmentName' for this property.
+    // The other fields are directly from 'getTableColumns(employees)'.
+    const employee: Employee = {
+      id: result.id,
+      firstName: result.firstName,
+      lastName: result.lastName,
+      email: result.email,
+      position: result.position,
+      departmentId: result.departmentId,
+      // The 'employees' table has its own 'departmentName' (employees.departmentName).
+      // getTableColumns(employees) will select that.
+      // We want to use the joined name. So, we override it here.
+      departmentName: result.joinedDepartmentName,
+      startDate: result.startDate,
+      phone: result.phone,
+      status: result.status,
+    };
+    return employee;
   }
 
   async getEmployeesByDepartment(departmentId: number, sortBy?: string, order?: string): Promise<Employee[]> {
@@ -623,6 +637,100 @@ export class DatabaseStorage implements IStorage {
       .from(leaveRequests)
       .where(eq(leaveRequests.status, "pending"));
     return result.count;
+  }
+
+  async seedInitialEmployeeAndBalances(): Promise<void> {
+    console.log('Checking for employee ID 1...');
+    const existingEmployee = await this.getEmployee(1);
+    let employeeIdToUse = 1;
+
+    if (!existingEmployee) {
+      console.log('Employee ID 1 not found. Seeding employee John Doe...');
+      try {
+        // Make sure department "Tech" exists or create it. For simplicity, assume departmentId 1 if it exists, or null.
+        // Let's try to fetch a department, or allow null if none exist.
+        let defaultDepartmentId: number | null = null;
+        const depts = await this.getDepartments();
+        if (depts.length > 0) {
+          defaultDepartmentId = depts[0].id;
+        } else {
+          // Optionally create a default department if none exist
+          // For now, we'll proceed with null if no departments are set up.
+          console.log("No departments found. Employee will be created without a department initially.");
+        }
+
+        const newEmployee = await this.createEmployee({
+          // id: 1, // ID is serial, so we don't set it. We'll fetch the first employee later.
+          firstName: "John",
+          lastName: "Doe",
+          email: "john.doe@example.com",
+          position: "Software Engineer",
+          departmentId: defaultDepartmentId,
+          startDate: new Date().toISOString().split('T')[0], // Today's date
+          status: "active",
+        });
+        console.log('Successfully seeded employee John Doe with ID:', newEmployee.id);
+        employeeIdToUse = newEmployee.id; // Use the ID of the newly created employee
+                                          // For the MyLeavePage, it expects employeeId = 1.
+                                          // This might need adjustment if the first employee isn't ID 1.
+                                          // Forcing ID 1 is tricky with serial PKs without direct SQL.
+                                          // We will assume the first created employee will get ID 1 if the table is empty.
+                                          // If not, the HARDCODED_EMPLOYEE_ID on the frontend must match this.
+      } catch (error) {
+        console.error('Error seeding initial employee:', error);
+        return; // Stop if employee seeding fails
+      }
+    } else {
+      console.log('Employee ID 1 already exists.');
+      employeeIdToUse = existingEmployee.id; // Should be 1
+    }
+
+    // Ensure the employee ID is indeed 1 for the hardcoded frontend value.
+    // If the first employee created doesn't get ID 1 due to prior data, this seeding logic
+    // won't perfectly match the MyLeavePage's HARDCODED_EMPLOYEE_ID = 1 without manual DB adjustment
+    // or changing the hardcoded ID. For now, we proceed assuming employeeIdToUse is what we need.
+    // If the MyLeavePage specifically needs employee ID 1, and this ID is taken by a different employee,
+    // then this seed logic would need to be smarter or the frontend assumption changed.
+
+    console.log(`Setting up leave balances for employee ID ${employeeIdToUse}...`);
+    const currentYear = new Date().getFullYear();
+    const leaveTypeNamesToSeed = [
+      { name: "Annual Leave", defaultDays: 20 },
+      { name: "Sick Leave", defaultDays: 10 }
+    ];
+
+    for (const lt of leaveTypeNamesToSeed) {
+      const leaveTypeRecord = await this.getLeaveTypeByName(lt.name);
+      if (leaveTypeRecord) {
+        console.log(`Checking balance for ${lt.name} for employee ${employeeIdToUse}, year ${currentYear}...`);
+        const existingBalance = await db.query.leaveBalances.findFirst({
+          where: and(
+            eq(leaveBalances.employeeId, employeeIdToUse),
+            eq(leaveBalances.leaveTypeId, leaveTypeRecord.id),
+            eq(leaveBalances.year, currentYear)
+          )
+        });
+
+        if (!existingBalance) {
+          console.log(`No existing balance for ${lt.name}. Seeding...`);
+          await db.insert(leaveBalances).values({
+            employeeId: employeeIdToUse,
+            leaveTypeId: leaveTypeRecord.id,
+            year: currentYear,
+            totalEntitlement: lt.defaultDays,
+            daysUsed: 0,
+          });
+          console.log(`Successfully seeded balance for ${lt.name}.`);
+        } else {
+          console.log(`Balance for ${lt.name} already exists. Current entitlement: ${existingBalance.totalEntitlement}, Used: ${existingBalance.daysUsed}.`);
+          // Optionally update if values are different, e.g., if defaultDays changed.
+          // For now, we only seed if it doesn't exist.
+        }
+      } else {
+        console.warn(`Leave type "${lt.name}" not found. Cannot seed balance for it.`);
+      }
+    }
+    console.log('Finished seeding employee and balances.');
   }
 
   // Notifications
