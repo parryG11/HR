@@ -569,10 +569,12 @@ export class DatabaseStorage implements IStorage {
         { name: "Maternity Leave", description: "Leave for new mothers", defaultDays: 90 },
         { name: "Paternity Leave", description: "Leave for new fathers", defaultDays: 10 },
       ];
+      console.log('Prepared default leave types for seeding:', JSON.stringify(defaultLeaveTypes, null, 2));
 
       try {
+        console.log('Attempting to insert default leave types into database...');
         await db.insert(leaveTypes).values(defaultLeaveTypes);
-        console.log('Successfully seeded initial leave types.');
+        console.log('Database insert operation completed. Successfully seeded initial leave types.');
       } catch (error) {
         console.error('Error seeding initial leave types:', error);
       }
