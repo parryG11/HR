@@ -85,8 +85,16 @@ export default function MyLeavePage() {
 
   // Mutation for Submitting Leave Request
   const mutation = useMutation({
-    mutationFn: (newLeaveRequest: Omit<LeaveRequest, "id" | "status" >) => // Backend assigns ID and default status
-      apiRequest<LeaveRequest>("/api/leave-requests", "POST", newLeaveRequest),
+    mutationFn: async (newLeaveRequest: Omit<LeaveRequest, "id" | "status" >) : Promise<LeaveRequest> => { // Backend assigns ID and default status
+      const response = await apiRequest( // apiRequest is from queryClient, it's method, url, data
+        "POST",
+        "/api/leave-requests",
+        newLeaveRequest
+      );
+      // apiRequest already throws an error for non-ok responses.
+      // If it's ok, we parse the JSON.
+      return response.json();
+    },
     onSuccess: (data, variables) => { // Access submitted variables if needed for invalidation
       toast({ title: "Success", description: "Leave request submitted successfully." });
       queryClient.invalidateQueries({ queryKey: ["employeeLeaveRequests", HARDCODED_EMPLOYEE_ID] });
