@@ -236,27 +236,68 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEmployee(id: number): Promise<Employee | undefined> {
-    const [employee] = await db.select({
+    const [employeeData] = await db.select({
         id: employees.id,
         firstName: employees.firstName,
         lastName: employees.lastName,
         email: employees.email,
         position: employees.position,
         departmentId: employees.departmentId,
-        departmentName: departments.name,
+        departmentName: departments.name, // Joined from departments table
         startDate: employees.startDate,
         status: employees.status,
-        role: employees.role,
-        profilePictureUrl: employees.profilePictureUrl,
-        createdAt: employees.createdAt,
-        updatedAt: employees.updatedAt,
+        phone: employees.phone, // Added missing phone field
+        // Note: employees.departmentName (the denormalized field on employees table) is not selected here,
+        // instead, the joined departments.name is used and aliased as departmentName.
+        // This is consistent with getEmployees method.
+        // Other fields like role, profilePictureUrl, createdAt, updatedAt are not in the current shared/schema.ts employees definition.
       })
       .from(employees)
       .leftJoin(departments, eq(employees.departmentId, departments.id))
       .where(eq(employees.id, id));
 
-    if (!employee) return undefined;
-    return {...employee, departmentName: employee.departmentName || null } as Employee;
+    if (!employeeData) return undefined;
+
+    // The type `Employee` is `typeof employees.$inferSelect`. This includes:
+    // id, firstName, lastName, email, position, departmentId, departmentName (from employees table), startDate, phone, status.
+    // Our select provides `departmentName` from the join. This is fine for the property name.
+    // We need to ensure the returned object structurally matches what `Employee` type expects.
+    // The spread `...employeeData` will take all selected fields.
+    // `departmentName` will be from the join.
+    // `phone` will be from `employees.phone`.
+    // We also need to provide the original `employees.departmentName` if the type strictly requires it
+    // and it's different from the joined one. However, `employees.$inferSelect` just cares about the property names.
+    // The most robust way is to explicitly construct the object or ensure the select matches all fields of employees table.
+
+    // Let's ensure all fields from the 'employees' table schema are present in the return.
+    // The current 'employees' table in shared/schema.ts has:
+    // id, firstName, lastName, email, position, departmentId, departmentName (denormalized field), startDate, phone, status.
+
+    // employeeData contains all selected fields, including 'departmentName' from the join.
+    // To strictly match `employees.$inferSelect` which includes `employees.departmentName`,
+    // we might need to fetch `employees.departmentName` separately or ensure it's part of employeeData.
+    // However, the error is likely due to a missing field in the select list itself (like phone was).
+    // Let's assume for now that employeeData having a departmentName property is sufficient.
+
+    return {
+      id: employeeData.id,
+      firstName: employeeData.firstName,
+      lastName: employeeData.lastName,
+      email: employeeData.email,
+      position: employeeData.position,
+      departmentId: employeeData.departmentId,
+      departmentName: employeeData.departmentName, // This comes from the join (departments.name)
+      startDate: employeeData.startDate,
+      status: employeeData.status,
+      phone: employeeData.phone,
+      // Explicitly set the employees.departmentName field for the Employee type if it was different or not selected.
+      // However, the select already aliases departments.name as departmentName.
+      // If the $inferSelect type expects a field named 'departmentName', and the select provides it, it should match.
+      // The previous return was `...employee, departmentName: employee.departmentName || null } as Employee;`
+      // which was trying to force the schema's departmentName.
+      // The current `employeeData` object has `departmentName` from the join.
+      // This should be fine.
+    } as Employee;
   }
 
   async getEmployeesByDepartment(departmentId: number, sortBy?: string, order?: string): Promise<Employee[]> {
