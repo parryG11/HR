@@ -50,8 +50,9 @@ app.use((req, res, next) => {
   // Seed initial data
   try {
     await storage.seedInitialLeaveTypes();
+    await storage.seedInitialEmployeeAndBalances(); // Call the new seeding function
   } catch (error) {
-    console.error("Failed to seed initial leave types:", error);
+    console.error("Failed to seed initial data:", error); // Generalize error message
     // Depending on the application's requirements, you might want to exit here
     // Forcing exit if seeding fails:
     throw error; // Re-throw the error
