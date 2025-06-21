@@ -13,7 +13,7 @@ interface LeaveBalanceDisplay {
   leaveTypeName: string | null;
 }
 import { db } from "./db";
-import { eq, ilike, or, count, sql, and, desc } from "drizzle-orm";
+import { eq, ilike, or, count, sql, and, desc, getTableColumns } from "drizzle-orm"; // Added getTableColumns
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
@@ -236,68 +236,40 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEmployee(id: number): Promise<Employee | undefined> {
-    const [employeeData] = await db.select({
-        id: employees.id,
-        firstName: employees.firstName,
-        lastName: employees.lastName,
-        email: employees.email,
-        position: employees.position,
-        departmentId: employees.departmentId,
-        departmentName: departments.name, // Joined from departments table
-        startDate: employees.startDate,
-        status: employees.status,
-        phone: employees.phone, // Added missing phone field
-        // Note: employees.departmentName (the denormalized field on employees table) is not selected here,
-        // instead, the joined departments.name is used and aliased as departmentName.
-        // This is consistent with getEmployees method.
-        // Other fields like role, profilePictureUrl, createdAt, updatedAt are not in the current shared/schema.ts employees definition.
+    const [result] = await db
+      .select({
+        // Select all fields from the employees table
+        ...getTableColumns(employees),
+        // And explicitly select the department name from the joined departments table,
+        // aliasing it to avoid collision during selection, then map it.
+        joinedDepartmentName: departments.name
       })
       .from(employees)
       .leftJoin(departments, eq(employees.departmentId, departments.id))
       .where(eq(employees.id, id));
 
-    if (!employeeData) return undefined;
+    if (!result) return undefined;
 
-    // The type `Employee` is `typeof employees.$inferSelect`. This includes:
-    // id, firstName, lastName, email, position, departmentId, departmentName (from employees table), startDate, phone, status.
-    // Our select provides `departmentName` from the join. This is fine for the property name.
-    // We need to ensure the returned object structurally matches what `Employee` type expects.
-    // The spread `...employeeData` will take all selected fields.
-    // `departmentName` will be from the join.
-    // `phone` will be from `employees.phone`.
-    // We also need to provide the original `employees.departmentName` if the type strictly requires it
-    // and it's different from the joined one. However, `employees.$inferSelect` just cares about the property names.
-    // The most robust way is to explicitly construct the object or ensure the select matches all fields of employees table.
-
-    // Let's ensure all fields from the 'employees' table schema are present in the return.
-    // The current 'employees' table in shared/schema.ts has:
-    // id, firstName, lastName, email, position, departmentId, departmentName (denormalized field), startDate, phone, status.
-
-    // employeeData contains all selected fields, including 'departmentName' from the join.
-    // To strictly match `employees.$inferSelect` which includes `employees.departmentName`,
-    // we might need to fetch `employees.departmentName` separately or ensure it's part of employeeData.
-    // However, the error is likely due to a missing field in the select list itself (like phone was).
-    // Let's assume for now that employeeData having a departmentName property is sufficient.
-
-    return {
-      id: employeeData.id,
-      firstName: employeeData.firstName,
-      lastName: employeeData.lastName,
-      email: employeeData.email,
-      position: employeeData.position,
-      departmentId: employeeData.departmentId,
-      departmentName: employeeData.departmentName, // This comes from the join (departments.name)
-      startDate: employeeData.startDate,
-      status: employeeData.status,
-      phone: employeeData.phone,
-      // Explicitly set the employees.departmentName field for the Employee type if it was different or not selected.
-      // However, the select already aliases departments.name as departmentName.
-      // If the $inferSelect type expects a field named 'departmentName', and the select provides it, it should match.
-      // The previous return was `...employee, departmentName: employee.departmentName || null } as Employee;`
-      // which was trying to force the schema's departmentName.
-      // The current `employeeData` object has `departmentName` from the join.
-      // This should be fine.
-    } as Employee;
+    // Construct the Employee object.
+    // The Employee type (employees.$inferSelect) expects a 'departmentName' field.
+    // We use the 'joinedDepartmentName' for this property.
+    // The other fields are directly from 'getTableColumns(employees)'.
+    const employee: Employee = {
+      id: result.id,
+      firstName: result.firstName,
+      lastName: result.lastName,
+      email: result.email,
+      position: result.position,
+      departmentId: result.departmentId,
+      // The 'employees' table has its own 'departmentName' (employees.departmentName).
+      // getTableColumns(employees) will select that.
+      // We want to use the joined name. So, we override it here.
+      departmentName: result.joinedDepartmentName,
+      startDate: result.startDate,
+      phone: result.phone,
+      status: result.status,
+    };
+    return employee;
   }
 
   async getEmployeesByDepartment(departmentId: number, sortBy?: string, order?: string): Promise<Employee[]> {
@@ -686,20 +658,20 @@ export class DatabaseStorage implements IStorage {
           // For now, we'll proceed with null if no departments are set up.
           console.log("No departments found. Employee will be created without a department initially.");
         }
-
+        
         const newEmployee = await this.createEmployee({
           // id: 1, // ID is serial, so we don't set it. We'll fetch the first employee later.
           firstName: "John",
           lastName: "Doe",
           email: "john.doe@example.com",
           position: "Software Engineer",
-          departmentId: defaultDepartmentId,
+          departmentId: defaultDepartmentId, 
           startDate: new Date().toISOString().split('T')[0], // Today's date
           status: "active",
         });
         console.log('Successfully seeded employee John Doe with ID:', newEmployee.id);
         employeeIdToUse = newEmployee.id; // Use the ID of the newly created employee
-                                          // For the MyLeavePage, it expects employeeId = 1.
+                                          // For the MyLeavePage, it expects employeeId = 1. 
                                           // This might need adjustment if the first employee isn't ID 1.
                                           // Forcing ID 1 is tricky with serial PKs without direct SQL.
                                           // We will assume the first created employee will get ID 1 if the table is empty.
@@ -712,7 +684,7 @@ export class DatabaseStorage implements IStorage {
       console.log('Employee ID 1 already exists.');
       employeeIdToUse = existingEmployee.id; // Should be 1
     }
-
+    
     // Ensure the employee ID is indeed 1 for the hardcoded frontend value.
     // If the first employee created doesn't get ID 1 due to prior data, this seeding logic
     // won't perfectly match the MyLeavePage's HARDCODED_EMPLOYEE_ID = 1 without manual DB adjustment
