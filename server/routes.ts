@@ -32,6 +32,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Leave Balance Route
+  app.get("/api/employees/:employeeId/leave-balances", authMiddleware, async (req, res) => {
+    try {
+      const employeeId = parseInt(req.params.employeeId);
+      const year = parseInt(req.query.year as string);
+
+      if (isNaN(employeeId) || isNaN(year)) {
+        return res.status(400).json({ message: "Invalid employee ID or year" });
+      }
+
+      // The storage function is expected to return LeaveBalanceDisplay[]
+      // which includes leaveTypeName
+      const balances = await storage.getLeaveBalancesForEmployee(employeeId, year);
+      res.json(balances);
+    } catch (error) {
+      console.error("Error in GET /api/employees/:employeeId/leave-balances:", error);
+      res.status(500).json({ message: "Failed to fetch leave balances" });
+    }
+  });
+
   // Notification routes
   app.get("/api/notifications", authMiddleware, async (req: AuthenticatedRequest, res) => {
     try {
@@ -266,6 +286,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete employee" });
+    }
+  });
+
+  // Leave Type routes
+  app.get("/api/leave-types", authMiddleware, async (req, res) => {
+    try {
+      const leaveTypes = await storage.getLeaveTypes();
+      res.json(leaveTypes);
+    } catch (error) {
+      console.error("Error in GET /api/leave-types:", error);
+      res.status(500).json({ message: "Failed to fetch leave types" });
     }
   });
 

@@ -58,6 +58,34 @@ export type Employee = typeof employees.$inferSelect;
 export type InsertLeaveRequest = z.infer<typeof insertLeaveRequestSchema>;
 export type LeaveRequest = typeof leaveRequests.$inferSelect;
 
+// LeaveTypes Table
+export const leaveTypes = pgTable("leave_types", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  // Example: default_days_entitled: integer("default_days_entitled").notNull().default(0),
+});
+
+export const insertLeaveTypeSchema = createInsertSchema(leaveTypes).omit({ id: true });
+export type LeaveType = typeof leaveTypes.$inferSelect;
+export type InsertLeaveType = z.infer<typeof insertLeaveTypeSchema>;
+
+// LeaveBalances Table
+export const leaveBalances = pgTable("leave_balances", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  leaveTypeId: integer("leave_type_id").notNull().references(() => leaveTypes.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  totalEntitlement: integer("total_entitlement").notNull().default(0), // Total days allocated for the year
+  daysUsed: integer("days_used").notNull().default(0), // Total days used so far
+}, (table) => ({
+  unq: unique().on(table.employeeId, table.leaveTypeId, table.year), // Ensure one balance entry per employee, per leave type, per year
+}));
+
+export const insertLeaveBalanceSchema = createInsertSchema(leaveBalances).omit({ id: true });
+export type LeaveBalance = typeof leaveBalances.$inferSelect;
+export type InsertLeaveBalance = z.infer<typeof insertLeaveBalanceSchema>;
+
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
