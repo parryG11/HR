@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Users, Building, Calendar, BarChart3, LogOut, CalendarDays, Plane, Settings2 } from "lucide-react"; // Added LogOut, CalendarDays, Plane, Settings2
+import { LayoutDashboard, Users, Building, Calendar, BarChart3, LogOut, CalendarDays, Plane } from "lucide-react"; // Added LogOut, CalendarDays, Plane
 import { jwtDecode } from 'jwt-decode'; // Added
 import { useEffect, useState } from 'react'; // Added
 import { Button } from '@/components/ui/button'; // Added
@@ -49,11 +49,6 @@ const navigationItems = [
     title: "My Leave",
     href: "/my-leave",
     icon: Plane, // Icon for My Leave
-  },
-  {
-    title: "Manage Leave Types",
-    href: "/manage-leave-types",
-    icon: Settings2,
   },
 ];
 

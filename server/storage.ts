@@ -1,4 +1,4 @@
-import { appointments, departments, employees, leaveRequests, users, type Appointment, type InsertAppointment, type User, type InsertUser, type Department, type Employee, type LeaveRequest, type InsertLeaveRequest, notifications, type InsertNotification, type Notification, leave_types, leave_balances, LeaveType, LeaveBalance, InsertLeaveType } from "@shared/schema";
+import { appointments, departments, employees, leaveRequests, users, type Appointment, type InsertAppointment, type User, type InsertUser, type Department, type Employee, type LeaveRequest, type InsertLeaveRequest, notifications, type InsertNotification, type Notification } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, or, count, sql, and, desc } from "drizzle-orm"; // Added 'and' and 'desc'
 import bcrypt from 'bcrypt';
@@ -53,16 +53,6 @@ export interface IStorage {
   getNotifications(userId: number, limit?: number, unreadOnly?: boolean): Promise<Notification[]>;
   markNotificationAsRead(userId: number, notificationId: number): Promise<Notification | null>;
   markAllNotificationsAsRead(userId: number): Promise<{ updatedCount: number }>;
-
-  // Leave Types
-  getLeaveTypes(): Promise<LeaveType[]>;
-  createLeaveType(data: InsertLeaveType): Promise<LeaveType>;
-  updateLeaveType(id: number, data: Partial<InsertLeaveType>): Promise<LeaveType | undefined>;
-  deleteLeaveType(id: number): Promise<boolean>;
-
-  // Leave Balances
-  getLeaveBalancesByEmployee(employeeId: number, year?: number): Promise<Array<LeaveBalance & { leaveTypeName: string | null }>>;
-  adjustLeaveBalance(employeeId: number, leaveTypeId: number, year: number, daysToAdjust: number): Promise<boolean>;
 }
 
 // Helper function to calculate day difference
@@ -405,6 +395,7 @@ export class DatabaseStorage implements IStorage {
 
   async createLeaveRequest(insertLeaveRequest: InsertLeaveRequest): Promise<LeaveRequest> {
     // Destructure to get all parts of insertLeaveRequest
+    // Destructure to get all parts of insertLeaveRequest
     const { employeeId, leaveType: leaveTypeName, startDate, endDate, reason, ...restOfInsert } = insertLeaveRequest;
 
     if (!employeeId || !leaveTypeName || !startDate || !endDate) {
@@ -416,45 +407,9 @@ export class DatabaseStorage implements IStorage {
       throw new Error("Leave duration must be at least one day.");
     }
 
-    const requestYear = new Date(startDate).getFullYear();
+    // NB: Leave balance checking and updating logic has been removed.
+    // The system will no longer validate against balances or deduct days.
 
-    // 1. Fetch leave_type_id based on leaveTypeName
-    const [leaveTypeRecord] = await db
-      .select({ id: leave_types.id })
-      .from(leave_types)
-      .where(eq(leave_types.name, leaveTypeName));
-
-    if (!leaveTypeRecord) {
-      throw new Error(`Invalid leave type: ${leaveTypeName}.`);
-    }
-    const leaveTypeId = leaveTypeRecord.id;
-
-    // 2. Fetch employee's leave balance
-    const [balance] = await db
-      .select()
-      .from(leave_balances)
-      .where(
-        and(
-          eq(leave_balances.employeeId, employeeId),
-          eq(leave_balances.leaveTypeId, leaveTypeId),
-          eq(leave_balances.year, requestYear)
-        )
-      );
-
-    if (!balance) {
-      throw new Error(`No leave balance found for ${leaveTypeName} in ${requestYear}.`);
-    }
-
-    // 3. Validation Logic
-    if (balance.totalEntitlement <= 0) {
-      throw new Error(`Not entitled for ${leaveTypeName}.`);
-    }
-    if ((balance.daysUsed + numberOfDaysRequested) > balance.totalEntitlement) {
-      const availableDays = balance.totalEntitlement - balance.daysUsed;
-      throw new Error(`Insufficient leave balance for ${leaveTypeName}. Requested: ${numberOfDaysRequested}, Available: ${availableDays}.`);
-    }
-
-    // 4. If valid, create the leave request
     const [createdLeaveRequest] = await db
       .insert(leaveRequests)
       .values({
@@ -466,25 +421,6 @@ export class DatabaseStorage implements IStorage {
 
     if (!createdLeaveRequest) {
       throw new Error("Failed to create leave request record.");
-    }
-
-    // 5. Update leave_balances.daysUsed
-    const newDaysUsed = balance.daysUsed + numberOfDaysRequested;
-    const updateResult = await db
-      .update(leave_balances)
-      .set({ daysUsed: newDaysUsed })
-      .where(
-        and(
-          eq(leave_balances.id, balance.id) // Use balance.id for precision
-        )
-      );
-
-    if ((updateResult.rowCount ?? 0) === 0) {
-      // This is a critical issue, potentially rollback or compensate
-      console.error(`Failed to update leave balance for request ${createdLeaveRequest.id}. Attempting to compensate.`);
-      // Attempt to delete the just-created leave request to maintain consistency
-      await db.delete(leaveRequests).where(eq(leaveRequests.id, createdLeaveRequest.id));
-      throw new Error("Failed to update leave balance. Leave request creation rolled back.");
     }
 
     return createdLeaveRequest;
@@ -570,149 +506,6 @@ export class DatabaseStorage implements IStorage {
 
     // result for pg driver contains rowCount
     return { updatedCount: result.rowCount ?? 0 };
-  }
-
-  // Leave Types
-  async getLeaveTypes(): Promise<LeaveType[]> {
-    try {
-      const result = await db.select().from(leave_types);
-      return result;
-    } catch (error) {
-      console.error("Error fetching leave types:", error);
-      throw new Error("Could not fetch leave types.");
-    }
-  }
-
-  async createLeaveType(data: InsertLeaveType): Promise<LeaveType> {
-    // Ensure data is validated against insertLeaveTypeSchema before this, typically in routes.ts
-    const [newLeaveType] = await db.insert(leave_types).values(data).returning();
-    if (!newLeaveType) {
-      throw new Error("Failed to create leave type."); // Or a more specific error
-    }
-    return newLeaveType;
-  }
-
-  async updateLeaveType(id: number, data: Partial<InsertLeaveType>): Promise<LeaveType | undefined> {
-    const [updatedLeaveType] = await db.update(leave_types).set(data).where(eq(leave_types.id, id)).returning();
-    return updatedLeaveType || undefined;
-  }
-
-  async deleteLeaveType(id: number): Promise<boolean> {
-    // TODO: Consider implications for existing leave requests/balances.
-    // For now, direct deletion.
-    const result = await db.delete(leave_types).where(eq(leave_types.id, id));
-    return (result.rowCount ?? 0) > 0;
-  }
-
-  // Leave Balances
-  async getLeaveBalancesByEmployee(employeeId: number, year?: number): Promise<Array<LeaveBalance & { leaveTypeName: string | null }>> {
-    try {
-      const currentYear = year || new Date().getFullYear();
-      const result = await db
-        .select({
-          ...leave_balances, // Select all columns from leave_balances
-          leaveTypeName: leave_types.name,
-        })
-        .from(leave_balances)
-        .leftJoin(leave_types, eq(leave_balances.leaveTypeId, leave_types.id))
-        .where(
-          and(
-            eq(leave_balances.employeeId, employeeId),
-            eq(leave_balances.year, currentYear)
-          )
-        );
-
-      // Ensure all fields from LeaveBalance are present and cast correctly
-      return result.map(row => ({
-        id: row.id,
-        employeeId: row.employeeId,
-        leaveTypeId: row.leaveTypeId,
-        year: row.year,
-        totalEntitlement: row.totalEntitlement,
-        daysUsed: row.daysUsed,
-        leaveTypeName: row.leaveTypeName,
-        // Add any other fields from leave_balances that are not explicitly listed but are part of LeaveBalance type
-        // For example, if there were createdAt/updatedAt fields on leave_balances, they'd be row.createdAt, etc.
-      })) as Array<LeaveBalance & { leaveTypeName: string | null }>;
-    } catch (error) {
-      console.error(`Error fetching leave balances for employee ${employeeId}:`, error);
-      throw new Error("Could not fetch leave balances.");
-    }
-  }
-
-  async adjustLeaveBalance(employeeId: number, leaveTypeId: number, year: number, daysToAdjust: number): Promise<boolean> {
-    try {
-      // Fetch current balance to ensure daysUsed doesn't go < 0 or exceed entitlement (though entitlement check is more for creation)
-      const [currentBalance] = await db
-        .select({ daysUsed: leave_balances.daysUsed, totalEntitlement: leave_balances.totalEntitlement })
-        .from(leave_balances)
-        .where(and(
-          eq(leave_balances.employeeId, employeeId),
-          eq(leave_balances.leaveTypeId, leaveTypeId),
-          eq(leave_balances.year, year)
-        ));
-
-      if (!currentBalance) {
-        console.warn(`No leave balance found for employee ${employeeId}, type ${leaveTypeId}, year ${year} when trying to adjust by ${daysToAdjust} days.`);
-        // Depending on strictness, this could be an error or a handled case.
-        // If adjusting due to cancellation, the balance record should exist.
-        return false;
-      }
-
-      const newDaysUsed = currentBalance.daysUsed + daysToAdjust;
-
-      // Ensure daysUsed does not go below 0.
-      // It could potentially exceed totalEntitlement if daysToAdjust is positive and large,
-      // but this function is primarily for adjustments (like cancellations, making daysUsed smaller).
-      // The creation logic should handle the upper bound check.
-      const finalDaysUsed = Math.max(0, newDaysUsed);
-
-      const result = await db
-        .update(leave_balances)
-        .set({ daysUsed: finalDaysUsed })
-        .where(
-          and(
-            eq(leave_balances.employeeId, employeeId),
-            eq(leave_balances.leaveTypeId, leaveTypeId),
-            eq(leave_balances.year, year)
-          )
-        );
-      return (result.rowCount ?? 0) > 0;
-    } catch (error) {
-      console.error(`Error adjusting leave balance for employee ${employeeId}, type ${leaveTypeId}, year ${year} by ${daysToAdjust} days:`, error);
-      throw new Error("Could not adjust leave balance.");
-    }
-  }
-
-  async seedInitialLeaveTypes() {
-    const coreLeaveTypes = [
-      { name: "Sick Leave", description: "Leave taken due to illness.", defaultDays: 10 },
-      { name: "Personal Leave", description: "Leave taken for personal reasons.", defaultDays: 5 },
-      { name: "Business Leave", description: "Leave taken for business-related travel or activities.", defaultDays: 7 },
-      { name: "Annual Leave", description: "Standard annual vacation leave.", defaultDays: 15 }
-    ];
-
-    console.log("Attempting to seed initial leave types...");
-
-    for (const lt of coreLeaveTypes) {
-      try {
-        const existing = await db
-          .select()
-          .from(leave_types)
-          .where(eq(leave_types.name, lt.name))
-          .limit(1);
-
-        if (existing.length === 0) {
-          await db.insert(leave_types).values(lt);
-          console.log(`Seeded leave type: ${lt.name}`);
-        } else {
-          console.log(`Leave type already exists: ${lt.name}`);
-        }
-      } catch (error) {
-        console.error(`Error seeding leave type ${lt.name}:`, error);
-      }
-    }
-    console.log("Finished seeding initial leave types.");
   }
 }
 
