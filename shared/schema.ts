@@ -63,6 +63,7 @@ export const leaveTypes = pgTable("leave_types", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description"),
+  defaultDays: integer("default_days").notNull().default(0),
   // Example: default_days_entitled: integer("default_days_entitled").notNull().default(0),
 });
 
