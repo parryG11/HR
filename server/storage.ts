@@ -696,14 +696,14 @@ export class DatabaseStorage implements IStorage {
 
     for (const lt of coreLeaveTypes) {
       try {
-        const existing = await this.db
+        const existing = await db
           .select()
           .from(leave_types)
           .where(eq(leave_types.name, lt.name))
           .limit(1);
 
         if (existing.length === 0) {
-          await this.db.insert(leave_types).values(lt);
+          await db.insert(leave_types).values(lt);
           console.log(`Seeded leave type: ${lt.name}`);
         } else {
           console.log(`Leave type already exists: ${lt.name}`);
