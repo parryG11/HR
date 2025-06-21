@@ -6,6 +6,7 @@ dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
 console.log('DATABASE_URL directly in index.ts:', process.env.DATABASE_URL);
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { storage } from "./storage"; // Import storage
 import { setupVite, serveStatic, log } from "./vite"; // cache-busting comment
 
 
@@ -45,6 +46,15 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+
+  // Seed initial data
+  try {
+    await storage.seedInitialLeaveTypes();
+  } catch (error) {
+    console.error("Failed to seed initial leave types:", error);
+    // Depending on the application's requirements, you might want to exit here
+    // process.exit(1);
+  }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

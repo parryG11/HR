@@ -683,6 +683,37 @@ export class DatabaseStorage implements IStorage {
       throw new Error("Could not adjust leave balance.");
     }
   }
+
+  async seedInitialLeaveTypes() {
+    const coreLeaveTypes = [
+      { name: "Sick Leave", description: "Leave taken due to illness.", defaultDays: 10 },
+      { name: "Personal Leave", description: "Leave taken for personal reasons.", defaultDays: 5 },
+      { name: "Business Leave", description: "Leave taken for business-related travel or activities.", defaultDays: 7 },
+      { name: "Annual Leave", description: "Standard annual vacation leave.", defaultDays: 15 }
+    ];
+
+    console.log("Attempting to seed initial leave types...");
+
+    for (const lt of coreLeaveTypes) {
+      try {
+        const existing = await db
+          .select()
+          .from(leave_types)
+          .where(eq(leave_types.name, lt.name))
+          .limit(1);
+
+        if (existing.length === 0) {
+          await db.insert(leave_types).values(lt);
+          console.log(`Seeded leave type: ${lt.name}`);
+        } else {
+          console.log(`Leave type already exists: ${lt.name}`);
+        }
+      } catch (error) {
+        console.error(`Error seeding leave type ${lt.name}:`, error);
+      }
+    }
+    console.log("Finished seeding initial leave types.");
+  }
 }
 
 export const storage = new DatabaseStorage();
