@@ -431,7 +431,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createLeaveRequest(insertLeaveRequest: InsertLeaveRequest): Promise<LeaveRequest> {
-    const { employeeId, leaveType: leaveTypeName, startDate, endDate, status } = insertLeaveRequest;
+    const { employeeId, leaveType: leaveTypeName, startDate, endDate } = insertLeaveRequest; // Status removed from destructuring as it's not used here for balance logic
 
     if (!employeeId || !leaveTypeName || !startDate || !endDate) {
       throw new Error("Missing required fields for leave request (employeeId, leaveType, startDate, endDate).");
@@ -442,38 +442,21 @@ export class DatabaseStorage implements IStorage {
       throw new Error("Leave duration must be at least one day.");
     }
 
+    // Validate leave type exists, but no balance check/deduction here.
+    // Balance interaction occurs when a request is *approved* (typically via updateLeaveRequest).
     const leaveTypeRecord = await this.getLeaveTypeByName(leaveTypeName);
     if (!leaveTypeRecord) {
       throw new Error(`Leave type "${leaveTypeName}" not found.`);
     }
 
-    // If the request is created as 'approved', update balance immediately
-    if (status === "approved") {
-      const currentYear = new Date(startDate).getFullYear(); // Make sure startDate is in a format Date() can parse, or parse it explicitly
-      const balance = await db.query.leaveBalances.findFirst({
-        where: and(
-          eq(leaveBalances.employeeId, employeeId),
-          eq(leaveBalances.leaveTypeId, leaveTypeRecord.id),
-          eq(leaveBalances.year, currentYear)
-        )
-      });
-
-      if (!balance) {
-        throw new Error(`No leave balance record found for employee ${employeeId}, leave type ${leaveTypeName}, year ${currentYear}. Please contact admin to set up initial balances.`);
-      }
-
-      if (balance.totalEntitlement - (balance.daysUsed + numberOfDaysRequested) < 0) {
-        throw new Error("Insufficient leave balance.");
-      }
-
-      await db.update(leaveBalances)
-        .set({ daysUsed: sql`${leaveBalances.daysUsed} + ${numberOfDaysRequested}` })
-        .where(eq(leaveBalances.id, balance.id));
-    }
+    // New leave requests are typically 'pending' by default (handled by DB schema or frontend).
+    // No balance deduction at the point of creation of a 'pending' request.
+    // If a system allows creating 'approved' requests directly, that flow would need its own balance check.
+    // For this project, approval and deduction are handled in updateLeaveRequest.
 
     const [createdLeaveRequest] = await db
       .insert(leaveRequests)
-      .values(insertLeaveRequest) // insertLeaveRequest already contains all necessary fields including status
+      .values(insertLeaveRequest) // insertLeaveRequest contains all necessary fields including default status
       .returning();
 
     if (!createdLeaveRequest) {
@@ -483,73 +466,87 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateLeaveRequest(id: number, updateData: Partial<InsertLeaveRequest>): Promise<LeaveRequest | undefined> {
-    const originalLeaveRequest = await this.getLeaveRequest(id);
-    if (!originalLeaveRequest) {
-      throw new Error(`Leave request with ID ${id} not found.`);
-    }
+    // Wrap the entire operation in a transaction
+    return await db.transaction(async (tx) => {
+      const originalLeaveRequest = await tx.query.leaveRequests.findFirst({
+        where: eq(leaveRequests.id, id),
+      });
 
-    // Perform the actual update of the leave request first
-    const [updatedLeaveRequest] = await db
-      .update(leaveRequests)
-      .set(updateData)
-      .where(eq(leaveRequests.id, id))
-      .returning();
-
-    if (!updatedLeaveRequest) return undefined; // Should not happen if originalRequest was found
-
-    // Handle balance adjustments if status changed
-    // Ensure status is part of updateData and it's different from original
-    if (updateData.status && updateData.status !== originalLeaveRequest.status) {
-      const numberOfDays = calculateDaysBetween(originalLeaveRequest.startDate, originalLeaveRequest.endDate);
-      const leaveTypeRecord = await this.getLeaveTypeByName(originalLeaveRequest.leaveType); // Use original leaveType
-
-      if (!leaveTypeRecord) {
-        console.error(`Leave type ${originalLeaveRequest.leaveType} not found while updating request ${id}. Balance not adjusted.`);
-        return updatedLeaveRequest; // Return updated request even if balance adjustment fails for this reason
+      if (!originalLeaveRequest) {
+        throw new Error(`Leave request with ID ${id} not found.`);
       }
 
-      const currentYear = new Date(originalLeaveRequest.startDate).getFullYear(); // Use original start date for year calculation
+      // Perform the actual update of the leave request first within the transaction
+      const [updatedLeaveRequest] = await tx
+        .update(leaveRequests)
+        .set(updateData)
+        .where(eq(leaveRequests.id, id))
+        .returning();
 
-      let adjustment = 0;
-      // Case 1: Was approved, now rejected or cancelled -> Credit days back
-      if (originalLeaveRequest.status === "approved" && (updateData.status === "rejected" || updateData.status === "cancelled")) {
-        adjustment = -numberOfDays;
+      if (!updatedLeaveRequest) {
+        // This should ideally not happen if originalLeaveRequest was found and tx is working
+        throw new Error(`Failed to update leave request with ID ${id}.`);
       }
-      // Case 2: Was not approved (e.g., pending), now approved -> Debit days
-      else if (originalLeaveRequest.status !== "approved" && updateData.status === "approved") {
-        adjustment = numberOfDays;
-      }
 
-      if (adjustment !== 0) {
-        const balance = await db.query.leaveBalances.findFirst({
-          where: and(
-            eq(leaveBalances.employeeId, originalLeaveRequest.employeeId),
-            eq(leaveBalances.leaveTypeId, leaveTypeRecord.id),
-            eq(leaveBalances.year, currentYear)
-          )
-        });
+      // Handle balance adjustments if status changed
+      if (updateData.status && updateData.status !== originalLeaveRequest.status) {
+        const numberOfDays = calculateDaysBetween(originalLeaveRequest.startDate, originalLeaveRequest.endDate);
+        const leaveTypeRecord = await this.getLeaveTypeByName(originalLeaveRequest.leaveType); // Use original leaveType
 
-        if (!balance) {
-          console.error(`No leave balance record for employee ${originalLeaveRequest.employeeId}, type ${leaveTypeRecord.name}, year ${currentYear}. Balance not adjusted.`);
-        } else {
-          // If debiting days, check for sufficient balance
-          if (adjustment > 0 && (balance.totalEntitlement - (balance.daysUsed + adjustment) < 0)) {
-            // This is a critical issue. The request is already updated to "approved" in the DB.
-            // Ideally, this check should happen BEFORE updating the leave request status.
-            // For this iteration, we'll log a warning. A more robust solution might involve transactions
-            // or reverting the status update if balance is insufficient.
-            console.warn(`Leave request ${id} approved, but employee ${originalLeaveRequest.employeeId} has insufficient balance for ${leaveTypeRecord.name}. Balance updated, but may be negative or reflect inconsistency.`);
-            // Or, throw an error to make the operation fail explicitly at this stage:
-            // throw new Error(`Approving request ${id} would exceed available balance for ${leaveTypeRecord.name}.`);
+        if (!leaveTypeRecord) {
+          // If leave type not found, something is wrong. Throw error to rollback transaction.
+          console.error(`Leave type ${originalLeaveRequest.leaveType} not found while updating request ${id}. Balance not adjusted.`);
+          throw new Error(`Leave type ${originalLeaveRequest.leaveType} not found. Cannot adjust balance.`);
+        }
+
+        const currentYear = new Date(originalLeaveRequest.startDate).getFullYear();
+
+        let adjustment = 0;
+        // Case 1: Was approved, now changing to something else (e.g., rejected, cancelled) -> Credit days back
+        if (originalLeaveRequest.status === "approved" && (updateData.status === "rejected" || updateData.status === "cancelled")) {
+          adjustment = -numberOfDays;
+        }
+        // Case 2: Was not approved (e.g., pending), now approved -> Debit days
+        else if (originalLeaveRequest.status !== "approved" && updateData.status === "approved") {
+          adjustment = numberOfDays;
+        }
+
+        if (adjustment !== 0) {
+          const balance = await tx.query.leaveBalances.findFirst({
+            where: and(
+              eq(leaveBalances.employeeId, originalLeaveRequest.employeeId),
+              eq(leaveBalances.leaveTypeId, leaveTypeRecord.id),
+              eq(leaveBalances.year, currentYear)
+            ),
+          });
+
+          if (!balance) {
+            // If no balance record, throw error to rollback transaction.
+            // Admin should ensure balances are set up.
+            console.error(`No leave balance record for employee ${originalLeaveRequest.employeeId}, type ${leaveTypeRecord.name}, year ${currentYear}.`);
+            throw new Error(`Leave balance record not found for ${leaveTypeRecord.name}, year ${currentYear}. Cannot approve request.`);
           }
 
-          await db.update(leaveBalances)
+          // If debiting days (adjustment > 0), check for sufficient balance BEFORE updating
+          if (adjustment > 0) { // Approving
+            if ((balance.daysUsed + adjustment) > balance.totalEntitlement) {
+              throw new Error(`Insufficient leave balance for ${leaveTypeRecord.name}. Available: ${balance.totalEntitlement - balance.daysUsed}, Requested: ${adjustment}.`);
+            }
+          }
+
+          // Perform balance update within the transaction
+          const updateResult = await tx.update(leaveBalances)
             .set({ daysUsed: sql`${leaveBalances.daysUsed} + ${adjustment}` })
-            .where(eq(leaveBalances.id, balance.id));
+            .where(eq(leaveBalances.id, balance.id))
+            .returning();
+
+          if (!updateResult || updateResult.length === 0) {
+            throw new Error(`Failed to update leave balance for employee ${originalLeaveRequest.employeeId}, type ${leaveTypeRecord.name}.`);
+          }
         }
       }
-    }
-    return updatedLeaveRequest;
+      return updatedLeaveRequest;
+    }); // End of transaction
   }
 
   async deleteLeaveRequest(id: number): Promise<boolean> {
