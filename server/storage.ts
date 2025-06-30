@@ -637,61 +637,84 @@ export class DatabaseStorage implements IStorage {
   }
 
   async seedInitialEmployeeAndBalances(): Promise<void> {
-    console.log('Checking for employee ID 1...');
-    const existingEmployeeById1 = await this.getEmployee(1);
-    let employeeIdToUse: number | null = null; // Initialize to null
+    console.log('Seeding initial employee (John Doe) and balances if necessary...');
+    let employeeIdForBalances: number | null = null;
 
-    if (existingEmployeeById1) {
-      console.log(`Employee ID 1 already exists (Name: ${existingEmployeeById1.firstName} ${existingEmployeeById1.lastName}, Email: ${existingEmployeeById1.email}).`);
-      employeeIdToUse = existingEmployeeById1.id; // Should be 1
+    // Check for Employee ID 1
+    console.log('Checking for employee with ID 1...');
+    const employeeById1 = await db.query.employees.findFirst({ where: eq(employees.id, 1) });
+
+    if (employeeById1) {
+      console.log(`Employee ID 1 found: ${employeeById1.firstName} ${employeeById1.lastName}, Email: ${employeeById1.email}`);
+      if (employeeById1.email === "john.doe@example.com") {
+        console.log('Employee ID 1 is "john.doe@example.com". This is the target test user.');
+        employeeIdForBalances = 1;
+      } else {
+        console.warn(`Employee ID 1 exists but has email "${employeeById1.email}", not "john.doe@example.com".`);
+        console.warn('MyLeavePage expects employee ID 1 to be "john.doe@example.com". Manual database adjustment is required.');
+        console.log("Skipping balance seeding for ID 1 due to email mismatch.");
+        return; // Stop seeding for ID 1
+      }
     } else {
-      console.log('Employee ID 1 not found. Checking for "john.doe@example.com"...');
-      try {
-        const johnDoeByEmail = await db.query.employees.findFirst({
-          where: eq(employees.email, "john.doe@example.com"),
-        });
+      // Employee ID 1 does not exist. Check if email "john.doe@example.com" is taken.
+      console.log('Employee ID 1 not found. Checking for email "john.doe@example.com"...');
+      const employeeByEmail = await db.query.employees.findFirst({ where: eq(employees.email, "john.doe@example.com") });
 
-        if (johnDoeByEmail) {
-          // Email exists. Is it ID 1 (somehow missed by getEmployee(1) - unlikely but good to cover)? Or another ID?
-          console.warn(`Employee with email "john.doe@example.com" already exists with ID ${johnDoeByEmail.id}.`);
-          if (johnDoeByEmail.id === 1) {
-            // This case should ideally have been caught by existingEmployeeById1, but defensive check.
-            console.log("This existing employee is ID 1. Will use for balance seeding.");
-            employeeIdToUse = 1;
-          } else {
-            console.warn(`Cannot create "John Doe" as employee ID 1 because email "john.doe@example.com" is taken by employee ID ${johnDoeByEmail.id}.`);
-            console.log("MyLeavePage expects employee ID 1 to be the test user. Manual database adjustment might be needed.");
-            console.log("Skipping balance seeding for ID 1 due to this conflict.");
-            return; // Stop seeding balances for employee 1
-          }
-        } else {
-          // Employee ID 1 does not exist AND email "john.doe@example.com" is available.
-          console.log('Email "john.doe@example.com" is available. Creating new "John Doe" employee...');
-          let defaultDepartmentId: number | null = null;
-          const depts = await this.getDepartments();
-          if (depts.length > 0) defaultDepartmentId = depts[0].id;
-          else console.log("No departments found. New employee will be created without a department initially.");
+      if (employeeByEmail) {
+        // Email is taken by someone other than ID 1 (since ID 1 was not found)
+        console.warn(`Email "john.doe@example.com" is already taken by employee ID ${employeeByEmail.id} (${employeeByEmail.firstName} ${employeeByEmail.lastName}).`);
+        console.warn('MyLeavePage expects employee ID 1 to be "john.doe@example.com".');
+        console.warn(`To resolve, either change employee ID ${employeeByEmail.id}'s email, or delete employee ID ${employeeByEmail.id} and re-run seeding.`);
+        console.log("Skipping creation of John Doe and balance seeding for ID 1 due to this conflict.");
+        return; // Stop seeding for ID 1
+      } else {
+        // Employee ID 1 does not exist, and email "john.doe@example.com" is available.
+        // Create "John Doe" with ID 1.
+        console.log('Email "john.doe@example.com" is available. Attempting to create "John Doe" with ID 1...');
+        let defaultDepartmentId: number | null = null;
+        const depts = await this.getDepartments();
+        if (depts.length > 0) defaultDepartmentId = depts[0].id;
+        else console.log("No departments found. New employee will be created without a department initially.");
 
-          const newEmployee = await this.createEmployee({
+        try {
+          const johnDoeData: InsertEmployee = {
+            id: 1, // Explicitly set ID to 1
             firstName: "John",
             lastName: "Doe",
             email: "john.doe@example.com",
             position: "Software Engineer",
             departmentId: defaultDepartmentId,
-            startDate: new Date().toISOString().split('T')[0],
+            startDate: new Date().toISOString().split('T')[0], // Ensure format YYYY-MM-DD
             status: "active",
-          });
-          console.log('Successfully seeded new employee "John Doe" with ID:', newEmployee.id);
-          employeeIdToUse = newEmployee.id;
+            // role and profilePictureUrl can be omitted if they have defaults or are nullable
+          };
+          // Use db.insert directly, as this.createEmployee might have side effects or not allow ID specification.
+          const [newlyCreatedEmployee] = await db.insert(employees).values(johnDoeData).returning();
 
-          if (employeeIdToUse !== 1) {
-            console.warn(`Newly created "John Doe" has ID ${employeeIdToUse}. MyLeavePage expects ID 1.`);
-            console.warn(`Balances will be seeded for employee ID ${employeeIdToUse}. For MyLeavePage testing with ID 1, manual DB adjustment or changing the frontend's HARDCODED_EMPLOYEE_ID might be necessary.`);
+          if (newlyCreatedEmployee && newlyCreatedEmployee.id === 1) {
+            console.log('Successfully created "John Doe" with ID 1 and email "john.doe@example.com".');
+            employeeIdForBalances = 1;
+          } else {
+            // This case should ideally not be reached if insert was successful and DB constraints didn't prevent ID 1.
+            console.error('Failed to create "John Doe" with ID 1, or ID was not returned as 1.');
+            console.warn('Manual database check and setup required for test user ID 1.');
+            return; // Stop seeding
           }
+        } catch (error: any) {
+          console.error('Error creating "John Doe" with ID 1:', error.message);
+          if (error.message.includes("duplicate key value violates unique constraint")) {
+             console.error('This likely means an employee with ID 1 already exists, but was not caught by the initial check, or another unique constraint was violated.');
+          }
+          console.warn('Manual database setup required for test user ID 1.');
+          console.log("Skipping balance seeding due to issues creating 'John Doe' with ID 1.");
+          return; // Stop seeding
         }
-      } catch (error: any) {
-        console.error('Error during attempt to find or seed "John Doe":', error.message);
-        console.log("Skipping balance seeding due to issues creating/verifying 'John Doe'.");
+      }
+    }
+
+    // Proceed with balance seeding only if employeeIdForBalances was successfully determined to be 1
+    if (employeeIdForBalances !== 1) {
+      console.log("Employee ID for balance seeding is not 1. Skipping balance seeding for the test user.");
         return;
       }
     }

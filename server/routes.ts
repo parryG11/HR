@@ -121,7 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(401).json({ message: "Invalid username or password" });
       }
-      const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: '1h' });
+      const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
       res.json({ token });
     } catch (error) {
       console.error("Error in POST /api/auth/login:", error);
