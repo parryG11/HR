@@ -715,18 +715,11 @@ export class DatabaseStorage implements IStorage {
     // Proceed with balance seeding only if employeeIdForBalances was successfully determined to be 1
     if (employeeIdForBalances !== 1) {
       console.log("Employee ID for balance seeding is not 1. Skipping balance seeding for the test user.");
-        return;
-      }
-    }
-
-    // Proceed with balance seeding only if employeeIdToUse was successfully determined
-    if (employeeIdToUse === null) {
-      console.log("Employee ID for balance seeding could not be determined (was not ID 1, and could not create suitable John Doe). Skipping balance seeding.");
       return;
     }
     
-    // If we reached here, employeeIdToUse is set (either to 1, or the ID of a newly created John Doe).
-    console.log(`Proceeding to set up leave balances for employee ID ${employeeIdToUse}...`);
+    // If we reached here, employeeIdForBalances is 1.
+    console.log(`Proceeding to set up leave balances for employee ID ${employeeIdForBalances}...`);
     const currentYear = new Date().getFullYear();
     const leaveTypeNamesToSeed = [
       { name: "Annual Leave", defaultDays: 20 },
@@ -736,10 +729,10 @@ export class DatabaseStorage implements IStorage {
     for (const lt of leaveTypeNamesToSeed) {
       const leaveTypeRecord = await this.getLeaveTypeByName(lt.name);
       if (leaveTypeRecord) {
-        console.log(`Checking balance for ${lt.name} for employee ${employeeIdToUse}, year ${currentYear}...`);
+        console.log(`Checking balance for ${lt.name} for employee ${employeeIdForBalances}, year ${currentYear}...`);
         const existingBalance = await db.query.leaveBalances.findFirst({
           where: and(
-            eq(leaveBalances.employeeId, employeeIdToUse),
+            eq(leaveBalances.employeeId, employeeIdForBalances),
             eq(leaveBalances.leaveTypeId, leaveTypeRecord.id),
             eq(leaveBalances.year, currentYear)
           )
@@ -748,7 +741,7 @@ export class DatabaseStorage implements IStorage {
         if (!existingBalance) {
           console.log(`No existing balance for ${lt.name}. Seeding...`);
           await db.insert(leaveBalances).values({
-            employeeId: employeeIdToUse,
+            employeeId: employeeIdForBalances,
             leaveTypeId: leaveTypeRecord.id,
             year: currentYear,
             totalEntitlement: lt.defaultDays,
