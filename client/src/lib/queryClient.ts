@@ -9,10 +9,22 @@ export class ApiError extends Error {
   }
 }
 
+// Unified throwIfResNotOk to handle 401 redirection globally
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
+    if (res.status === 401) {
+      console.warn("Token expired or invalid. Redirecting to login.");
+      localStorage.removeItem('token');
+      // Ensure this navigation works in the context of React Query and potential SPAs
+      // Forcing a full page load to /login is generally robust for clearing state.
+      window.location.href = '/login';
+      // Throw a specific error to stop further processing by the calling function
+      // (apiRequest or getQueryFn) and by React Query for this specific failed request.
+      // The browser navigation should take precedence.
+      throw new ApiError("Redirecting to login due to 401.", res.status);
+    }
+    // For other errors, parse message and throw generic ApiError
     const text = (await res.text()) || res.statusText;
-    // Try to parse as JSON to get a server message if available
     let serverMessage = text;
     try {
        const jsonError = JSON.parse(text);
