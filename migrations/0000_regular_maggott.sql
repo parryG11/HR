@@ -51,13 +51,23 @@ CREATE TABLE "leave_requests" (
 	"reason" text
 );
 --> statement-breakpoint
-CREATE TABLE "leave_types" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"name" text NOT NULL,
-	"description" text,
-	"default_days" integer DEFAULT 0 NOT NULL,
-	CONSTRAINT "leave_types_name_unique" UNIQUE("name")
+-- Step 1: Create ENUM type
+CREATE TYPE leave_type_enum AS ENUM (
+  'Sick Leave',
+  'Annual Leave',
+  'Personal Leave',
+  'Business Leave'
 );
+
+-- Step 2: Use it in your table
+CREATE TABLE "leave_types" (
+  "id" serial PRIMARY KEY NOT NULL,
+  "name" leave_type_enum NOT NULL UNIQUE,
+  "description" text,
+  "default_days" integer DEFAULT 0 NOT NULL
+);
+
+
 --> statement-breakpoint
 CREATE TABLE "notifications" (
 	"id" serial PRIMARY KEY NOT NULL,

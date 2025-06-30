@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,15 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Popover,
@@ -29,78 +20,47 @@ import { CalendarIcon, Loader2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient"; // Use a common apiRequest
-import type { LeaveRequest, LeaveType, LeaveBalanceDisplay } from "@/lib/types";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { LeaveRequest } from "@/lib/types";
 import { formatDate, formatToYYYYMMDD, calculateDaysBetween } from "@/lib/utils";
-import { cn } from "@/lib/utils"; // For Popover Calendar button styling
+import { cn } from "@/lib/utils";
 
-// ASSUMPTION: Hardcoded employee details. Replace with actual auth context.
+// Import Select components from the UI library
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 const HARDCODED_EMPLOYEE_ID = 1;
-const HARDCODED_EMPLOYEE_NAME = "John Doe"; // Example, ensure this employee exists for testing
-const HARDCODED_EMPLOYEE_POSITION = "Software Engineer"; // Example
+const HARDCODED_EMPLOYEE_NAME = "John Doe";
+const HARDCODED_EMPLOYEE_POSITION = "Software Engineer";
+const currentYear = new Date().getFullYear();
 
-// Define variants based on ShadCN/UI's default Badge component variants
-// and custom ones like "success" and "destructive" if styled separately.
 type BadgeVariant = "default" | "secondary" | "outline" | "destructive" | "success";
 
 export default function MyLeavePage() {
   const { toast } = useToast();
 
-  // Form State
-  // Stores the NAME of the selected leave type directly from the Select component.
-  const [selectedLeaveTypeNameValue, setSelectedLeaveTypeNameValue] = useState<string>("");
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [reason, setReason] = useState<string>("");
+  const [selectedLeaveTypeNameValue, setSelectedLeaveTypeNameValue] = useState<string>("");
 
-  // Fetch Leave Types
-  const { data: leaveTypes = [], isLoading: isLoadingLeaveTypes } = useQuery<LeaveType[]>({
-    queryKey: ["leaveTypes"],
-    queryFn: () => apiRequest<LeaveType[]>("/api/leave-types", "GET"),
-  });
-
-  // Fetch Leave Balance for selected type and current year
-  const currentYear = new Date().getFullYear();
-  const { data: leaveBalance, isLoading: isLoadingLeaveBalance } = useQuery<LeaveBalanceDisplay[]>({
-    queryKey: ["leaveBalance", HARDCODED_EMPLOYEE_ID, selectedLeaveTypeNameValue, currentYear],
-    queryFn: async () => {
-      if (!selectedLeaveTypeNameValue) return []; // Don't fetch if no type selected
-      // Find the selected leave type object to get its ID for the balance query
-      // This check might be redundant if selectedLeaveTypeNameValue guarantees a valid type from leaveTypes
-      const selectedTypeObj = leaveTypes.find(lt => lt.name === selectedLeaveTypeNameValue);
-      if (!selectedTypeObj) return []; // Or handle as error / no balance
-
-      // The API /api/employees/:employeeId/leave-balances already joins with leave_types and returns leaveTypeName
-      const balances = await apiRequest<LeaveBalanceDisplay[]>(
-        `/api/employees/${HARDCODED_EMPLOYEE_ID}/leave-balances?year=${currentYear}`, "GET"
-      );
-      // Filter for the selected leave type by its name
-      return balances.filter(b => b.leaveTypeName === selectedLeaveTypeNameValue);
-    },
-    enabled: !!selectedLeaveTypeNameValue && leaveTypes.length > 0,
-  });
-  
-  const currentBalanceForSelectedType: LeaveBalanceDisplay | undefined = leaveBalance?.[0];
-
-
-  // Mutation for Submitting Leave Request
   const mutation = useMutation({
-    mutationFn: async (newLeaveRequest: Omit<LeaveRequest, "id" | "status" >) : Promise<LeaveRequest> => { // Backend assigns ID and default status
-      const response = await apiRequest( // apiRequest is from queryClient, it's method, url, data
+    mutationFn: async (newLeaveRequest: Omit<LeaveRequest, "id" | "status">): Promise<LeaveRequest> => {
+      const response = await apiRequest(
         "POST",
         "/api/leave-requests",
         newLeaveRequest
       );
-      // apiRequest already throws an error for non-ok responses.
-      // If it's ok, we parse the JSON.
       return response.json();
     },
-    onSuccess: (data, variables) => { // Access submitted variables if needed for invalidation
+    onSuccess: () => {
       toast({ title: "Success", description: "Leave request submitted successfully." });
       queryClient.invalidateQueries({ queryKey: ["employeeLeaveRequests", HARDCODED_EMPLOYEE_ID] });
-      // Invalidate based on the leaveType name that was actually submitted
-      queryClient.invalidateQueries({ queryKey: ["leaveBalance", HARDCODED_EMPLOYEE_ID, variables.leaveType, currentYear] });
-      // Reset form
       setSelectedLeaveTypeNameValue("");
       setStartDate(undefined);
       setEndDate(undefined);
@@ -118,11 +78,19 @@ export default function MyLeavePage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!startDate || !endDate || !selectedLeaveTypeNameValue) {
-      toast({ title: "Validation Error", description: "Please fill all required fields (Leave Type, Start Date, End Date).", variant: "destructive" });
+      toast({
+        title: "Validation Error",
+        description: "Please fill all required fields (Leave Type, Start Date, End Date).",
+        variant: "destructive"
+      });
       return;
     }
     if (endDate < startDate) {
-      toast({ title: "Validation Error", description: "End date cannot be before start date.", variant: "destructive" });
+      toast({
+        title: "Validation Error",
+        description: "End date cannot be before start date.",
+        variant: "destructive"
+      });
       return;
     }
 
@@ -132,36 +100,37 @@ export default function MyLeavePage() {
       employeeId: HARDCODED_EMPLOYEE_ID,
       employeeName: HARDCODED_EMPLOYEE_NAME,
       employeePosition: HARDCODED_EMPLOYEE_POSITION,
-      leaveType: selectedLeaveTypeNameValue, // Send name string as per schema
+      leaveType: selectedLeaveTypeNameValue,
       startDate: formatToYYYYMMDD(startDate),
       endDate: formatToYYYYMMDD(endDate),
-      reason: reason,
-      appliedDate: appliedDate,
+      reason,
+      appliedDate,
     });
   };
 
-  // Fetch Employee's Leave Requests
   const { data: employeeLeaveRequests = [], isLoading: isLoadingEmployeeRequests } = useQuery<LeaveRequest[]>({
     queryKey: ["employeeLeaveRequests", HARDCODED_EMPLOYEE_ID],
-    queryFn: () => apiRequest<LeaveRequest[]>(`/api/leave-requests?employee=${HARDCODED_EMPLOYEE_ID}`, "GET"),
     enabled: !!HARDCODED_EMPLOYEE_ID,
   });
-  
+
   const getStatusBadgeVariant = (status: string | undefined): BadgeVariant => {
     switch (status?.toLowerCase()) {
       case "approved": return "success";
       case "rejected": return "destructive";
-      case "pending": 
-      default: return "outline"; // Default to "outline" for pending or unknown statuses
+      case "pending":
+      default: return "outline";
     }
   };
 
-  // Removed useEffect for selectedLeaveTypeName as it's no longer needed.
-  // selectedLeaveTypeNameValue now directly holds the name from the Select component.
+  const staticLeaveTypes = [
+    "Annual Leave",
+    "Personal Leave",
+    "Sick Leave",
+    "Business Leave",
+  ];
 
   return (
     <div className="container mx-auto p-6 space-y-8">
-      {/* Apply for Leave Section */}
       <Card>
         <CardHeader>
           <CardTitle>Apply for Leave</CardTitle>
@@ -169,70 +138,34 @@ export default function MyLeavePage() {
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Leave Type Select */}
-              <div className="space-y-2">
-                <Label htmlFor="leaveType">Leave Type</Label>
-                <Select
-                  value={selectedLeaveTypeNameValue} // Stores the name of the leave type
-                  onValueChange={setSelectedLeaveTypeNameValue} // Sets the name
-                  disabled={isLoadingLeaveTypes || mutation.isPending}
-                >
-                  <SelectTrigger id="leaveType">
-                    <SelectValue placeholder="Select a leave type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {isLoadingLeaveTypes ? (
-                      <SelectItem value="loading" disabled>Loading types...</SelectItem>
-                    ) : (
-                      leaveTypes.map((type) => (
-                        <SelectItem key={type.id} value={type.name}>
-                          {type.name}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-                {!isLoadingLeaveTypes && leaveTypes.length === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    No leave types are currently configured. Please contact an administrator if you believe this is an error.
-                  </p>
-                )}
-              </div>
-
-              {/* Leave Balance Display */}
-              <div className="space-y-2">
-                <Label>Leave Balance (Current Year: {currentYear})</Label>
-                <div className="p-3 border rounded-md bg-muted min-h-[60px]">
-                  {isLoadingLeaveBalance && selectedLeaveTypeNameValue && <p className="text-sm text-muted-foreground">Loading balance...</p>}
-                  {!selectedLeaveTypeNameValue && <p className="text-sm text-muted-foreground">Select a leave type to see balance.</p>}
-                  {selectedLeaveTypeNameValue && !isLoadingLeaveBalance && !currentBalanceForSelectedType && <p className="text-sm text-destructive">No balance record found for {selectedLeaveTypeNameValue}.</p>}
-                  {currentBalanceForSelectedType && (
-                    <div>
-                      <p className="text-sm">
-                        <strong>{currentBalanceForSelectedType.leaveTypeName}:</strong> Entitled: {currentBalanceForSelectedType.totalEntitlement} days, Used: {currentBalanceForSelectedType.daysUsed} days
-                      </p>
-                      <p className="text-sm text-primary">
-                        Available: {currentBalanceForSelectedType.totalEntitlement - currentBalanceForSelectedType.daysUsed} days
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
+            <div className="space-y-2">
+              <label htmlFor="leaveType" className="text-sm font-medium">Leave Type</label>
+              <Select
+                value={selectedLeaveTypeNameValue}
+                onValueChange={setSelectedLeaveTypeNameValue}
+                disabled={mutation.isPending}
+              >
+                <SelectTrigger id="leaveType">
+                  <SelectValue placeholder="Select a leave type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {staticLeaveTypes.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Start Date */}
               <div className="space-y-2">
-                <Label htmlFor="startDate">Start Date</Label>
+                <label className="text-sm font-medium">Start Date</label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
                       variant={"outline"}
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !startDate && "text-muted-foreground"
-                      )}
+                      className={cn("w-full justify-start text-left font-normal", !startDate && "text-muted-foreground")}
                       disabled={mutation.isPending}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
@@ -245,23 +178,19 @@ export default function MyLeavePage() {
                       selected={startDate}
                       onSelect={setStartDate}
                       initialFocus
-                      disabled={(date) => date < new Date(new Date().setHours(0,0,0,0)) || mutation.isPending}
+                      disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0)) || mutation.isPending}
                     />
                   </PopoverContent>
                 </Popover>
               </div>
 
-              {/* End Date */}
               <div className="space-y-2">
-                <Label htmlFor="endDate">End Date</Label>
+                <label className="text-sm font-medium">End Date</label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
                       variant={"outline"}
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !endDate && "text-muted-foreground"
-                      )}
+                      className={cn("w-full justify-start text-left font-normal", !endDate && "text-muted-foreground")}
                       disabled={mutation.isPending}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
@@ -274,28 +203,25 @@ export default function MyLeavePage() {
                       selected={endDate}
                       onSelect={setEndDate}
                       initialFocus
-                      disabled={(date) => (startDate && date < startDate) || date < new Date(new Date().setHours(0,0,0,0)) || mutation.isPending}
+                      disabled={(date) => (startDate && date < startDate) || date < new Date(new Date().setHours(0, 0, 0, 0)) || mutation.isPending}
                     />
                   </PopoverContent>
                 </Popover>
               </div>
             </div>
-            
-            {/* Duration Display (Optional) */}
+
             {startDate && endDate && calculateDaysBetween(startDate, endDate) > 0 && (
-                 <div className="space-y-2">
-                    <Label>Duration</Label>
-                    <p className="text-sm p-3 border rounded-md bg-muted">
-                        {calculateDaysBetween(startDate, endDate)} day(s)
-                    </p>
-                </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Duration</label>
+                <p className="text-sm p-3 border rounded-md bg-muted">
+                  {calculateDaysBetween(startDate, endDate)} day(s)
+                </p>
+              </div>
             )}
 
-            {/* Reason */}
             <div className="space-y-2">
-              <Label htmlFor="reason">Reason</Label>
+              <label className="text-sm font-medium">Reason</label>
               <Textarea
-                id="reason"
                 placeholder="Enter reason for leave (optional)"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
@@ -313,7 +239,6 @@ export default function MyLeavePage() {
         </form>
       </Card>
 
-      {/* My Leave Requests Section */}
       <Card>
         <CardHeader>
           <CardTitle>My Leave History</CardTitle>
