@@ -72,7 +72,7 @@ export async function setupVite(app: Express, server: Server) {
     }
 
   });
-
+}
   // Production: serve built frontend
   export function serveStatic(app: Express) {
   const distPath = path.resolve(
