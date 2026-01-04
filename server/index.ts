@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+import './loadEnv'; // Load environment variables first
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express, { type Request, Response, NextFunction } from "express";
@@ -9,8 +9,6 @@ import { setupVite, serveStatic, log } from "./vite";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables
-dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
 console.log('DATABASE_URL directly in index.ts:', process.env.DATABASE_URL);
 
 const app = express();

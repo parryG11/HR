@@ -1,8 +1,4 @@
-// Test comment
-// Intentionally placing dotenv.config() at the very top.
-import dotenv from 'dotenv';
-dotenv.config();
-
+import './loadEnv'; // Load environment variables first
 import { Pool as PgPool } from 'pg';
 import { drizzle as drizzleNodePostgres } from 'drizzle-orm/node-postgres';
 import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
