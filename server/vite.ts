@@ -72,9 +72,10 @@ export async function setupVite(app: Express, server: Server) {
     }
 
   });
+}
 
-  // Production: serve built frontend
-  export function serveStatic(app: Express) {
+// Production: serve built frontend
+export function serveStatic(app: Express) {
   const distPath = path.resolve(
     path.dirname(new URL(import.meta.url).pathname),
     "../dist/public"
@@ -92,4 +93,4 @@ export async function setupVite(app: Express, server: Server) {
   app.get("*", (_req, res) => {
     res.sendFile(path.resolve(distPath, "index.html"));
   });
-} // <- This is the correct closing brace for the function
+}
