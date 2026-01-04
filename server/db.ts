@@ -20,19 +20,24 @@ if (!process.env.DATABASE_URL) {
 let db: ReturnType<typeof drizzleNodePostgres> | ReturnType<typeof drizzleNeonServerless>;
 let pool: PgPool | NeonPool;
 
-if (process.env.NODE_ENV === 'production') {
+// Helper to determine if the database is local
+const isLocalDatabase = (url: string) => url.includes('localhost') || url.includes('127.0.0.1');
+
+// Use Neon for production ONLY if the database is not local
+if (process.env.NODE_ENV === 'production' && !isLocalDatabase(process.env.DATABASE_URL)) {
   console.log("Initializing Neon serverless driver for production environment.");
-  // Configure Neon to use WebSockets, necessary for serverless environments.
   neonConfig.webSocketConstructor = ws;
   const neonPoolInstance = new NeonPool({ connectionString: process.env.DATABASE_URL });
   pool = neonPoolInstance;
   db = drizzleNeonServerless({ client: neonPoolInstance, schema });
   console.log("Neon serverless driver initialized successfully.");
 } else {
-  console.log("Initializing node-postgres (pg) driver for development environment.");
+  // Use standard node-postgres for development or local production databases
+  const envType = process.env.NODE_ENV === 'development' ? 'development' : 'local production';
+  console.log(`Initializing node-postgres (pg) driver for ${envType} environment.`);
   const pgPoolInstance = new PgPool({ connectionString: process.env.DATABASE_URL });
   pool = pgPoolInstance;
-  db = drizzleNodePostgres(pgPoolInstance, { schema }); // Drizzle for node-postgres takes the pool directly
+  db = drizzleNodePostgres(pgPoolInstance, { schema });
   console.log("node-postgres (pg) driver initialized successfully.");
 }
 
